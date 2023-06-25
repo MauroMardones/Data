@@ -634,6 +634,8 @@ joindat <- grid %>%
 ```
 Mapa Esfuerzo
 
+> here we can viz diferent variables  
+
 ```{r fig.cap= "Cambios espaciotempiorales del esfuerzo pesquero en bacalao APA. Linea roja representa el 47ºS"}
 ## Plot final
 mas1 <- ggplot() +
