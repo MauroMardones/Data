@@ -1,0 +1,1094 @@
+---
+title: "Analisis espacio-temporal Datos de Las bitacoras artesanales de la pesquería de Bacalao"
+subtitle: "Analisis exploratorio 1986-2021"
+author: "Mauricio Mardones I"
+date: "r format(Sys.time(), '%d %b %Y')"
+output: pdf_document
+toc: TRUE
+toc_depth: 3 
+theme: united
+toc-title: "INDICE"
+
+---
+
+```{r}
+rm(list = ls())
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, collapse = TRUE, 
+                      fig.align = 'center', cache=FALSE, warning=F, include=T, message=F)
+```
+
+
+Cargo librerias necesarias para el analisis exploratorio de los datos de las distintas bases. Aqui existen librerias para dataviz y analisis perse
+
+```{r lib, warning=F, message=F, error=F}
+
+
+#analisis
+library(ggsignif)
+library(ggrepel)
+library(inlmisc)
+library(nortest) #para testear distribucion
+library(skimr) #provides a frictionless approach to summary statistics w
+library(performance)
+library(lme4)
+library(see)
+library(skimr)
+library(readxl)
+# vizualizacion
+library(ggridges)
+library(sf)
+library(GGally)
+library(tidyverse, quietly = TRUE)
+library(patchwork)
+library(dbplyr)
+library(knitr)
+library(data.table)
+library(knitr, quietly = TRUE)
+library(kableExtra)
+library(raster)
+
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+dir()
+```
+
+Exploramos el archivo 2, 3, 7, 8 y 9.
+
+```{r data, message=FALSE, warning=FALSE}
+df8620<- read.csv2("bit_art_86_20.csv",sep=",", header = T)
+df2021 <- read_excel("Bit_Cod_2021.xlsx")
+df8621 <- read_excel("BITACORAS ESPINEL bacalao.xlsx", sheet = "BITACORAS_ESPINEL_bacalao")
+
+Des_Cod <- read.csv2("Des_Cod_2021.csv", sep=",", header=F)
+dim(df2021)
+summary(df2021)
+head(Des_Cod)
+```
+
+
+Codigo 37 Recurso Bacalao.
+
+df8621 = Base Espinel artesanal.
+
+
+```{r}
+colnames(Des_Cod)<-c("Capt", "Region")
+head(Des_Cod)
+```
+
+
+```{r}
+des<-ggplot(Des_Cod , aes(Region, as.double(Capt)))+
+   geom_bar(stat="identity", fill="steelblue")+
+   geom_text(aes(label=Capt), vjust=-0.3, size=3.5)+
+  theme_bw()+
+  ylab("Desembarque Artesanal (t.)")
+des
+```
+
+CPUE  por data de df8620
+```{r}
+meanc <- df8620 %>% 
+               group_by(ANO, AREA) %>% 
+              summarise(meancpue =mean(as.numeric(CPUE)))
+
+me <- ggplot(meanc %>% 
+               drop_na(AREA), aes(x=ANO, y=meancpue)) + 
+        geom_point(stat = 'identity', colour='#cb181d', fill='#cb181d', alpha=.9, size=2) +
+        stat_smooth(colour='#253494')+
+        scale_x_continuous(breaks = seq(from = 1986, to = 2021, by = 4))+
+        theme_bw()+
+        theme(axis.text.x = element_text(angle = 90, hjust = 2))+
+        facet_wrap(.~AREA, ncol =  3)+
+        ylim(0,600)+
+        ylab('CPUE (kg/dfp)')+
+        xlab('')+
+        ggtitle('')
+me
+```
+
+
+```{r}
+dfp <- ggplot(df8620 %>% 
+                drop_na(AREA)) +
+  geom_histogram(aes(x=DFP), fill="#31a354")+
+  theme_bw()+
+  facet_wrap(.~AREA, ncol =  3)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("Dias fuera de puerto")+
+  ylab("Registros")
+dfp
+
+```
+
+
+Por ahora no me fue posible trabajaer espacialmente con los datos de la bit desde el 86 al 20 por que no estan con referencias. Es una base con muy pocas variables asociadas al registro. De todas maneras exploraremos el comportamiento de la captura en el tiempo.
+
+Ahora genero una carpeta para guardar figuras.
+
+```{r data2}
+# Genero una carpeta en donde alojar figuras
+dir.fig       <-dir.create(file.path("Figuras"))
+fig            <-c("pdf","bmp")
+```
+
+\pagebreak
+
+# 1. Bitacora de Pesca (Capturas y rendimientos)
+
+Debo filtrar por Bacalao COD= 37 
+
+```{r c2}
+glimpse(df2021) #un vistazo de los datos
+dim(df2021)
+
+cod <- df2021 %>% 
+  filter(COD_ESPECIE==37)
+
+# comprueblo la dimension de los registros de la nueva base.
+dim(cod)
+hist(cod$PESO, breaks=75)
+
+```
+
+
+```{r}
+head(cod)
+table(cod$DESTINO_CAPTURA)
+table(cod$COD_BARCO)
+
+# identifico los puertos de recalada
+table(cod$PUERTO_RECALADA)
+```
+
+ahora separo las fechas. Tomo como referencia la fecha de recalada. Preguntar si esto es ok.
+
+```{r}
+realdate <- as.Date(cod$FECHA_HORA_RECALADA, format="%Y-%M-%D")
+
+dfdate <- data.frame(Fecha=realdate)
+ANOREC=as.numeric (format(realdate,"%Y"))
+MESREC=as.numeric (format(realdate,"%m"))
+DIAREC=as.numeric (format(realdate,"%d"))
+
+cod2<-cbind(dfdate,ANOREC,MESREC,DIAREC,cod)
+colnames(cod2)
+table(cod2$MESREC)
+```
+Ahora transformo las coordenadas
+
+```{r message=F, include=F, warning=F}
+cod2$LONGITUD
+cod2$LONGITUD/10000
+floor(cod2$LONGITUD/10000)
+gr<-floor(cod2$LONGITUD/10000)
+cod2$LONGITUD-gr*10000
+(cod2$LONGITUD-gr*10000)/100
+mn<-(cod2$LONGITUD-gr*10000)/100
+cod2$LONGITUD-gr*10000-mn*100
+sg<-cod2$LONGITUD-gr*10000-mn*100
+cod2$LONG<-gr+mn/60+sg/(60*60)
+cod2$LONG<-cod2$LONG*-1
+LONG <- cod2$LONG
+
+cod2$LATITUD
+cod2$LATITUD/10000
+floor(cod2$LATITUD/10000)
+gr<-floor(cod2$LATITUD/10000)
+cod2$LATITUD-gr*10000
+(cod2$LATITUD-gr*10000)/100
+mn<-(cod2$LATITUD-gr*10000)/100
+cod2$LATITUD-gr*10000-mn*100
+sg<-cod2$LATITUD-gr*10000-mn*100
+cod2$LAT<-gr+mn/60+sg/(60*60)
+cod2$LAT<-cod2$LAT*-1
+LAT<- cod2$LAT
+
+
+
+```
+
+Identifico como se distribuyen los datos de captura por t. Desde ya, se filtran los lances con registros de mas de 100 t. dado que son datos mal registrados.
+
+## Distribucion de los registros de lances por puerto 
+
+```{r dist lances por pais}
+h <- ggplot(cod,  aes(x=PESO)) +
+  geom_density(binwidth = 2, color="grey",  alpha=0.4, 
+                 fill="blue", show.legend = FALSE)+
+  facet_wrap(vars(PUERTO_RECALADA), ncol=4) +
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("Registros de captura por lance (t.)")+
+  ylab("Frecuencia")+
+  ylim(0,0.002)
+h
+
+```
+
+## Identifico la cantidad de registros por barco
+
+```{r lances por barco}
+bn <- ggplot(cod) +
+  geom_histogram(aes(x=COD_BARCO), fill="#31a354")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  scale_x_continuous(unique(cod$COD_BARCO))+
+  xlab("Nº Registros por barco")+
+  ylab("Barcos")
+bn
+
+```
+
+Este aspecto es importante, dado que hay desequilibrio de registros por barco, lo que puede ser un problema de balanceo al monento de usarlo como factor para la estandarizacion.
+
+Miro las capturas totales observadas por barco y año
+
+```{r Catchto3, warning=F, include=T, message=F}
+cpor <- cod2 %>%
+  group_by(MESREC, COD_BARCO, PUERTO_ZARPE, TIPO_CARNADA, REGION_PUERTO_RECALADA) %>% 
+  summarise(sumcatch=sum(PESO))
+              
+bnc <- ggplot(cpor, aes(x=MESREC, y=sumcatch)) +
+  geom_bar(stat="identity", fill="#31a354")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  scale_x_continuous(breaks = seq(from = 1, to =12, by = 1))+
+  xlab("")+
+  facet_wrap(.~REGION_PUERTO_RECALADA)+
+  ylab("Captura acumulada")
+bnc
+```
+
+
+Aqui es necesario identificar el por que aumentan las capturas. Existen mas estudios (surveys) o bien hay mas tecnificacion de las artes de muestreo? o simplemente sobreregistro? Considerar esta alza dado que las capturas son indicadores de otros componentes no relacionados con la dinamica del recurso.
+
+A pesar que la captura desde base no indica niveles poblacionales, podemos se puede identificar cuales son las subareas principales de extraccion que luego veremos en el mapa.
+
+## Captura por Barco
+
+Primero el porcentaje de captura acumulada por Barco a traves de la serie completa
+
+```{r percentCaptAnovessel, warning=F, include=T, message=F}
+# primero el aporte por barco
+vessper <- cod2 %>%
+  group_by(MESREC, REGION_PUERTO_RECALADA) %>% 
+  count(COD_BARCO) %>% 
+  mutate(Porcentage= n / sum(n) * 100)
+  
+# corroboro el total
+suma <- vessper %>% 
+  summarise(sum(Porcentage))
+
+vs0 <- ggplot(vessper, aes(x=COD_BARCO, y=Porcentage)) + 
+  geom_bar(stat = "identity" , colour="#bdbdbd", fill="#f03b20", alpha=.3) +
+  facet_wrap(.~REGION_PUERTO_RECALADA, ncol =  5)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size=9))+
+  #scale_x_continuous(breaks = seq(from = 1980, to = 2019, by = 2))+
+  ylab("% Captura (t.)")+
+  xlab("")+
+  #coord_polar()+
+  #geom_text(aes(label=CAPTURA_2), position=position_dodge(width=0.9), vjust=0)+
+  ggtitle("% Captura por barco")
+vs0
+```
+
+# MAPAS
+
+```{r}
+# saco las NA de las coord
+
+#transformar los datos en un sf object
+
+codmap <- st_as_sf(cod2 %>% 
+                    drop_na(LONG) %>% 
+                    drop_na(LAT), coords = c("LONG", "LAT"),  crs = 4326)
+```
+
+
+```{r}
+# Generando mapas con un raster.
+
+chile <- raster::getData("GADM", country = "CHL", level = 1)
+chile1<-fortify(chile)
+ggplot()+
+         geom_polygon(data=chile1, aes(x=long, y=lat, group=group), 
+                      fill="lightblue",color="grey20", size=0.15)+
+         coord_sf(crs = st_crs(4326), xlim = c(-80, -65), ylim = c(-58, -15)) +
+         theme_bw()
+
+# Aca veo los 
+chile@data$NAME_1 
+
+
+e <- extent(-80,-65,-58,-15)
+rc <- crop(chile, e)
+
+proj4string(rc) <- CRS("+init=epsg:4326")
+
+# la proyección adecuada en lat long
+
+#plot(chile[,1])
+```
+
+
+```{r}
+# si los tienes en metros, transforma el objeto a utm
+chile2 <- st_as_sf(rc) # para dejarlo en formato geom_sf
+```
+
+
+```{r}
+# hacer la grilla en el objeto "asutral1"
+
+grid <- chile2 %>%
+  st_make_grid(cellsize = c(1,1)) %>% # para que quede cuadrada
+  st_cast("MULTIPOLYGON") %>%
+  st_sf() %>% # objeto en spatial feature
+  mutate(cellid = row_number())
+```
+
+
+
+```{r}
+## Pongo los datos en la grilla
+
+joindat <- grid %>%
+  st_join(codmap) %>% 
+  group_by(cellid) %>% 
+  summarise(sum_catch = mean(PESO)) # por ejemplo, plotear la captura "CAPTURA_1"
+```
+
+```{r}
+## Plot final
+
+mas2 <- ggplot() +
+  geom_sf(data=joindat %>% 
+             filter(!is.na(sum_catch)), aes(fill = sum_catch), 
+          alpha=0.7, color=NA) +
+  scale_fill_viridis_c(option="magma",
+                       direction=-1, name="Catch (t.)")+
+  geom_sf(data = grid,  fill=NA, color=NA) +
+  geom_sf(data = chile2, color=NA) +
+  coord_sf() +
+  scale_alpha(guide="none")+
+  xlab(expression(paste(Longitude^o,~'O'))) +
+  ylab(expression(paste(Latitude^o,~'S')))+
+  guides(colour = guide_legend()) +
+  theme(panel.background = element_rect(fill = 'aliceblue'),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+mas2
+```
+
+## CPUE como indicador de anundancias. Analisis espaciotemporal.
+
+Este analisis tiene la intencion de extraer un indicador de la abundancia (indirecto) a traves de los años en la pesqueroa del krill. Con ello, tener señales de las tendencias de biomasas de la poblacion de krill y con ello inccorporar esta señal en un modelo de evaluacion de stock integrado.
+
+En principio, procedo con los filtros de horas de arrastre. Es de consensos el hecho de quitar registros con horas de arrastre 0 o *NA*. Tambien se filtran los registros con 0 y no mayores a 10 horas, lo cual podria ser el maximo de una jornada de arrastre.
+
+```{r}
+# Elimino los campos con hora menores 0.0001 y mayores a 10, que seria una faena maxima de duracion de un lance
+c4<-c3 %>% 
+  filter(trawl_duration_total_h>0.0001 & trawl_duration_total_h<10) %>% 
+  filter(!is.na(trawl_duration_total_h))
+```
+
+Compruebo la nueva dimension de la base
+```{r echo=F}
+dim(c4)
+```
+
+
+Ahora calculo el rendimiento con una variable llamada *"CPUE"* que seran los kilogramos por tiempo de arrastre de red. Lo transformo a toneladas. Y establezco un resumen
+
+```{r}
+#ahora calculo  el rendimiento
+
+c4$CPUE<-(c4$greenweight_caught_kg/c4$trawl_duration_total_h/1000)
+
+# detalles estadisticos de la variable creada
+#skim(c4, CPUE)
+```
+
+
+## Distribucion de variables CPUE en WPA
+
+El analisis de normalidad, tambien llamado contraste de normalidad, analizan cuanto difiere la distribucion de los datos observados respecto a una distribucion normal con la misma media y desviacion tipica.
+
+
+
+
+
+```{r  echo=FALSE}
+#saco la variable transformada de la CPUE
+c4$logCPUE <- ifelse(c4$CPUE>0,log(c4$CPUE),NA)
+
+v <- ggplot(c4, aes(y = logCPUE))+
+  geom_histogram(colour=4, fill=4, alpha=.3)+
+  #facet_wrap(Ano~.)+ #para ver la distribucion por año
+  coord_flip()+
+  theme_bw()
+n <- ggplot(c4, aes(y = CPUE))+
+  geom_histogram(colour=4, fill=4, alpha=.3, binwidth = 3)+
+  coord_flip()+
+  ggtitle("Histrogramas de CPUE y LogCPUE")+
+  #facet_wrap(Year~.)+ #para ver la distribucion por año
+  theme_bw()
+
+v/n
+```
+
+
+### QQ-plot
+
+
+
+```{r CpueQQ_Xnor, warning=F, include=T, message=F}
+qn <- ggplot(c4, aes(sample = logCPUE))+
+  stat_qq(shape=21,  fill="red", size=2) + 
+  stat_qq_line( colour="red")+
+  ggtitle("Graficos de QQplot")+
+  theme_bw()
+qn
+```
+
+
+
+
+### Test de normalidad
+
+
+
+```{r echo=FALSE}
+ad.test(rnorm(1000, mean = 5, sd = 2))
+pearson.test(rnorm(1000, mean = 5, sd = 3))
+```
+
+Ahora lo aplicamos a nuestros datos.
+
+```{r}
+ad.test(c4$CPUE)
+ad.test(c4$logCPUE)
+```
+
+Se comprueba la normalidad y por lo tanto procedemos a aplicar modelos lineales. (GLM o GLMM)
+
+```{r}
+#Otros test
+cvm.test(c4$logCPUE)
+pearson.test(c4$CPUE)
+pearson.test(c4$logCPUE)
+wilcox.test(c4$logCPUE)
+
+
+library(fitdistrplus)
+descdist(c4$logCPUE, discrete = FALSE)
+```
+
+
+```{r}
+normal_dist <- fitdist(c4$logCPUE, "norm")
+# subsequently inspect the fit:
+plot(normal_dist)
+```
+
+Otras estadisticas de los datos del DF *C4* completo. Con esta tabla proveemos un detallos nivel d eestadisticas descriptivas de cada variable considerada.
+
+```{r eval=F}
+#skim(c4)
+```
+
+A su ve podemos detallar estadiisticas indivuduales
+
+```{r}
+#skim(c4, CPUE, trawl_duration_total_h, depth_bottom_haul_start_m)
+```
+
+
+```{r smooth, warning=F, include=F, message=F, fig.retina=1,   echo=FALSE, fig.align="center"}
+cpuen <- c4 %>% 
+  group_by(season_ccamlr, asd_code) %>% 
+  summarise(mean=mean(CPUE))
+
+me <- ggplot(cpuen, aes(x=season_ccamlr, y=mean)) + 
+        geom_point(stat = 'identity', 
+                   colour='#cb181d', fill='#cb181d', alpha=.9, size=2) +
+        stat_smooth(colour='#253494')+
+        scale_x_continuous(breaks = seq(from = 1996, to = 2021, by = 2))+
+        theme_bw()+
+        theme(axis.text.x = element_text(angle = 90, hjust = 2))+
+        facet_wrap(.~asd_code, ncol =  3)+
+        ylim(0,20)+
+        ylab('CPUE (t./hr haul)')+
+        xlab('')+
+        ggtitle('')
+me
+```
+Aqui ya identificamos algo relevante. Los rendimientos de pesca del sector 48.3 muestran un marcado declive en los ultimos años.
+
+## Creacion de una base para la estandarizacion
+
+Una vez concluido el analisis exploratorio y aplicacion de filtros de la base de bitacoras de capturas, procedemos a generar una base de uso para la estandarizacion del indice de abunmdancia para cada zona de evaluacion del erizo del sur.
+
+```{r echo=TRUE}
+
+cpue481 <- c4 %>% 
+  filter(asd_code==481) %>% 
+  group_by(season_ccamlr, asd_code) %>% 
+  summarise(mean=mean(CPUE))
+
+cpue482 <- c4 %>% 
+  filter(asd_code==482) %>% 
+  group_by(season_ccamlr, asd_code) %>% 
+  summarise(mean=mean(CPUE))
+
+cpue483 <- c4 %>% 
+  filter(asd_code==483) %>% 
+  group_by(season_ccamlr, asd_code) %>% 
+  summarise(mean=mean(CPUE))
+
+cpuea <- rbind(cpue481, cpue482, cpue483)
+
+write.csv(cpuea, "cpuekrill2020.csv", sep=" ", row.names = F)
+
+```
+
+
+\pagebreak
+
+## Transformar variables
+
+
+Ahora cambio los formatos de las fechas dado que debo separar dia, mes y año. El primer analisis es anual, por ende no considero los meses ni años y elijo fecha de zarpe
+
+```{r}
+realdate <- as.Date(c4$date_catchperiod_start, format="%Y-%m-%d")
+
+bitadate <- data.frame(date_catchperiod_start=realdate)
+year=as.numeric (format(realdate,"%Y"))
+month=as.numeric (format(realdate,"%m"))
+day=as.numeric (format(realdate,"%d"))
+
+c5<-cbind(bitadate,day,month,year,c4)
+summary(c5)
+dim(c5)
+
+#saco la columna duplicada
+c5<-c5[,c(2:41)]
+```
+
+Asumimos una distribucion gaussiana para la variable LogCPUE y con ello testeamos de forma anidada los factores disponibles para el analisis, en este caso, Trim, Prof, Año y sus interacciones
+
+
+#### Dejo Trimestres
+
+```{r  include=FALSE}
+c5$trim[c5$month%in%c(1,2,3)] <- "1"    # T 1 
+c5$trim[c5$month%in%c(4,5,6)] <- "2"    # T 2 
+c5$trim[c5$month%in%c(7,8,9)] <- "3"    # T 3 
+c5$trim[c5$month%in%c(10,11,12)] <- "4"    # T 4
+
+
+```
+
+#### Rangos de Profundidad
+
+Lo primero es identificar como se distribuye el dato de profundidad a traves de los años;
+
+En principio un boxplot para identificar las principales estadisticas.
+
+
+
+```{r warning=FALSE}
+csb <-ggplot(c5, aes(y=depth_gear_set_end_m, x=season_ccamlr, 
+                     group=season_ccamlr)) +
+    geom_boxplot(outlier.shape = NA) +
+    #geom_jitter(size=0.4, alpha=0.2) +
+    #facet_wrap(.~c2$season_ccamlr , ncol=10)+
+    #theme_ipsum() +
+    theme_bw()+
+    ggtitle('')+
+    xlab('Años')+
+    scale_y_reverse()+
+    ylab('Distribucion Profundidad de los lances')
+csb
+```
+
+
+ahora por subarea
+```{r}
+css <-ggplot(c5, aes(y=depth_gear_set_end_m, x=year, colour = asd_code, fill=asd_code, group=year)) +
+    geom_violin(alpha=0.3, show.legend = FALSE) +
+    scale_y_reverse()+
+    #geom_jitter(size=0.4, alpha=0.2) +
+    facet_wrap(.~asd_code , ncol=1)+
+    scale_color_continuous(guide="none")+
+    theme_bw()+
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, size=8))+
+    scale_x_continuous(breaks = seq(from = 1995, to = 2020, by = 1))+
+    #theme_ipsum() +
+    ggtitle('')+
+    xlab('')+
+    ylim(400,0)+
+    ylab('Distribucion Profundidad de los lances')
+css
+```
+
+en total
+
+```{r}
+boxplot(c5$depth_gear_haul_start_m, col = 4, ylab="Profundidad del Lance")
+```
+La gran mayoria de los datos se encuentran entre los 0 y 200 mts de profundidad.
+
+```{r}
+pro <- ggplot(c4, aes(y = depth_gear_haul_start_m))+
+  geom_density(colour=6, fill=6, alpha=.03)+
+  coord_flip()+
+  ggtitle("Comportamiento de variable Profundidad de Lance")+
+  facet_wrap(season_ccamlr~., ncol=6)+ #para ver la distribucion por año
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 250)+
+  theme_bw()+
+  xlim(0, 0.025)
+pro
+```
+Para propositos de estandrizacion, genero rangos de profundidad como factor;
+
+```{r include=FALSE}
+c5$Depth_cat<- cut(c5$depth_gear_haul_start_m,
+                          breaks=c(50,100,200,300,500, 1000),rigth=T, 
+                          labels=c("<50", "50-100","100-200","200-300", ">300"))
+```
+
+
+Mas exploraciones para determinar interacciones entre variables
+
+```{r}
+par(mfrow=c(3,1),mai=c(0.5,1,.2,.6))
+ip<- interaction.plot(c5$year,  
+                 c5$vessel_nationality_code, c5$CPUE, fun=mean, 
+                 col=seq(1:10),trace.label="Nacionalidad",
+                 lty=1,xlab="Año",ylab="median CPUE")
+ipb<- interaction.plot(c5$year,  
+                 c5$Depth_cat, c5$CPUE, fun=mean, 
+                 col=seq(1:10),trace.label="Profundidad",
+                 lty=1,xlab="Año",ylab="median CPUE")
+ipc<- interaction.plot(c5$year,  
+                 c5$trim, c5$CPUE, fun=mean, 
+                 col=seq(1:10),trace.label="Trimestre",
+                 lty=1,xlab="Año",ylab="median CPUE")
+```
+
+Utilice la grafica de interaccion para mostrar como la relacion entre un factor categorico y una respuesta continua depende del valor del segundo factor categorico. Esta grafica muestra las medias de los niveles de un factor en el eje X y una linea separada para cada nivel del otro factor.
+
+Evalue las lineas para entender como las interacciones afectan la relacion entre los factores y la respuesta.
+- Lineas paralelas
+No hay interaccion.
+- Lineas no paralelas
+Hay una interaccion. Mientras menos paralelas sean las lineas, mayor sera la fuerza de la interaccion.
+
+Aunque puede utilizar esta grafica para mostrar los efectos, asegurese de realizar la prueba de ANOVA adecuada y evaluar la significancia estadistica de los efectos. Si los efectos de interaccion son significativos, no puede interpretar los efectos principales sin considerar los efectos de interaccion.
+
+
+```{r}
+c5$year<-as.factor(c5$year)
+c5$trim<-as.factor(as.character(c5$trim))
+c5$Depth_cat<-as.factor(c5$Depth_cat)
+c5$vessel_name<-as.factor(c5$vessel_name)
+c5$vessel_nationality_code<-as.factor(c5$vessel_nationality_code)
+c5$asd_code<-as.factor(c5$asd_code)
+```
+
+### Separo las sub areas de trabajo, es decir 481, 482 y 483
+
+
+```{r}
+#saco el duplicado
+
+s481 <- c5 %>% 
+      filter(asd_code =="481")
+s482 <- c5 %>% 
+      filter(asd_code =="482")
+s483 <- c5 %>% 
+      filter(asd_code =="483")
+dim(s481)
+dim(s482)
+dim(s483)
+```
+
+
+### Genero una base en .csv con el df *c5*
+
+
+```{r eval=F}
+write.csv(c5, "cpuekrill1997_2020.csv", sep = ",", row.names = TRUE)
+```
+
+
+Es necesario consignar que debo hacer la estandarizacion por cada subarea.
+
+### Estandariar CPUE *("trawl_duration_total_h"/ "greenweight_caught_kg")*
+
+
+
+\pagebreak 
+
+## Estimacion Modelos Generales Lineales Mixtos (GLMM)
+
+
+En desarrollo...
+
+Guardo imagen con reccursos usados
+
+```{r}
+save.image(file = "expl_dat_kr.RData")
+```
+
+
+\pagebreak
+
+# 2. Estructuras de tallas
+
+Otra pieza impportante de imformacion para una evaluacion de stock, es la referida a los componentes biologicos como tallas y pesos medios a traves de las areas y años. Para ello, exploraremos los datos biologicosy  preparaemos la salida para pasarlo al SS3.
+
+
+Identifico la estructura de las bases de datos biologicos
+
+```{r}
+glimpse(oh)
+glimpse(ohbio)
+```
+
+Junto las bases para tener un id del lance georeferenciadso de las tallas.
+
+```{r}
+ohbio2 <- merge(oh, ohbio, by="obs_haul_id")
+glimpse(ohbio2)
+
+```
+
+El data frame que corresponde usar es el de *"ohbio2"*
+
+```{r}
+ohbio3 <- rename(ohbio2, Longitud ="length_total_cm")
+
+p <- ggplot(ohbio3, 
+            aes(x=Longitud, group=asd_code, fill= asd_code)) +
+    geom_density( alpha=0.4)+
+    facet_wrap(.~season_ccamlr, scales = "free_y", ncol=5) +
+    geom_vline(xintercept = 3.6, color = "red")+
+    xlim(0,10)+
+    xlab("Longitud (mm.)")+
+    theme_bw()
+p 
+
+```
+
+
+atencion!
+
+The ggjoy package has been deprecated. Please switch over to ggridges. 
+
+### Estructura de tallas por año y por Zona
+
+
+```{r fig.width=5, fig.align="center", message=F, warning=F}
+jz <- ggplot(ohbio3, aes(x=Longitud, y = as.factor(season_ccamlr),
+                         fill=asd_code))+
+  #geom_joy(alpha=0.9) +
+  geom_density_ridges(stat = "binline", bins = 30, 
+                      scale = 0.95, draw_baseline = FALSE)+
+  facet_wrap(.~asd_code, ncol=3) +   
+  geom_vline(xintercept = 3.6, color = "red")+
+  scale_x_continuous(breaks = seq(from = 1, to = 10, by = 1))+
+  scale_y_discrete(breaks = seq(from = 2000, to = 2020, by = 1))+
+  scale_fill_viridis_d(name="SubArea")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlim(0,10)+
+  xlab("Longitud (cm.)")+
+  ylab("")
+jz
+```
+Estructura de tallas por año y por nacionalidad
+
+
+```{r fig.align="center", message=F, warning=F}
+jn <- ggplot(ohbio3 , aes(x=Longitud, y = as.factor(season_ccamlr),
+                         fill=asd_code))+
+  geom_density_ridges(alpha=0.9) + 
+  facet_wrap(.~vessel_nationality_code, ncol=6) +   
+  geom_vline(xintercept = 3.6, color = "red")+
+  scale_x_continuous(breaks = seq(from = 1, to = 10, by = 1))+
+  scale_y_discrete(breaks = seq(from = 2000, to = 2020, by = 1))+
+  scale_fill_viridis_d(option = "C", name="Nacionalidad")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlim(0,10)+
+  xlab("Longitud (cm.)")+
+  ylab("")
+jn
+```
+otra viz
+
+
+```{r fig.align="center", message=F, warning=F}
+jn2 <- ggplot(ohbio3 , aes(x=Longitud, y = as.factor(season_ccamlr),
+                         fill=asd_code))+
+  geom_density_ridges(stat = "binline", bins = 20, 
+                      scale = 0.95, draw_baseline = FALSE)+
+  facet_wrap(.~vessel_nationality_code, ncol=6) +   
+  geom_vline(xintercept = 3.6, color = "red")+
+  scale_x_continuous(breaks = seq(from = 1, to = 10, by = 1))+
+  scale_y_discrete(breaks = seq(from = 2000, to = 2020, by = 3))+
+  scale_fill_viridis_d(option = "E", name="SubArea")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlim(0,10)+
+  xlab("Longitud (cm.)")+
+  ylab("")
+jn2
+```
+
+Estructura de tallas por año y por barco
+
+
+```{r fig.align="center", message=F, warning=F}
+jb <- ggplot(ohbio3 , aes(x=Longitud, y = as.factor(season_ccamlr),
+                         fill=asd_code))+
+  geom_density_ridges(alpha=0.9, stat = "binline", bins = 20, 
+                      scale = 0.95, draw_baseline = FALSE)+
+  #geom_density_ridges(stat = "binline", bins = 5, 
+  #                   scale = 0.95, draw_baseline = FALSE)+
+  #geom_joy(alpha=0.9) + 
+  facet_wrap(.~vessel_name, ncol=13) +   
+  geom_vline(xintercept = 3.6, color = "red")+
+  scale_x_discrete(breaks = seq(from = 1, to = 10, by = 2))+
+  scale_y_discrete(breaks = seq(from = 2000, to = 2020, by = 5))+
+  scale_fill_viridis_d(option = "E", name="subArea")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlim(0,10)+
+  xlab("Longitud (cm.)")+
+  ylab("")
+jb
+```
+de otra forma
+
+Puedo a su vez filtrar algunos barcos para vizualizar mejor e identificar patrones
+
+```{r fig.align="center", message=F, warning=F, fig.width=10, fig.height=5}
+jb2 <- ggplot(ohbio3 , aes(x=Longitud, y = as.factor(season_ccamlr),
+                         fill=asd_code))+
+  #geom_density_ridges(alpha=0.9)+
+  geom_density_ridges(stat = "binline", bins = 20, 
+                      scale = 0.95, draw_baseline = FALSE)+
+  #geom_joy(alpha=0.9) + 
+  facet_wrap(.~vessel_name, ncol=13) +   
+  geom_vline(xintercept = 3.6, color = "red")+
+  scale_x_discrete(breaks = seq(from = 1, to = 10, by = 2))+
+  scale_y_discrete(breaks = seq(from = 2000, to = 2020, by = 5))+
+  scale_fill_viridis_d(option = "B", name="subArea")+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlim(0,10)+
+  xlab("Longitud (cm.)")+
+  ylab("")
+jb2
+```
+
+
+Tallas por ASD
+
+```{r fig.align="center", warning=F, message=F}
+M <- ggplot(ohbio3 , aes(x=Longitud, y = as.factor(season_ccamlr), fill=asd_code)) +
+  geom_density_ridges(stat = "binline", bins = 50,  alpha=0.5,
+                      scale = 2, draw_baseline = FALSE)+
+  facet_wrap(.~asd_code, ncol=3) +
+  scale_x_continuous(breaks = seq(from = 1, to = 10, by = 0.5))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ggtitle("Estructura de tallas krill")+
+  geom_vline(xintercept = 3.5, color = "red")+
+  geom_vline(xintercept = 3.6, color = "blue")+
+  xlim(1,10)
+M
+```
+## Estimar % bajo de reclutas de krill
+
+```{r}
+ohbpor= ohbio3 %>% 
+  mutate(inf_112=(Longitud < 3.6)) %>% # new column TRUE if value is below 112
+  group_by(season_ccamlr, asd_code, vessel_nationality_code) %>%
+  summarise(pct=round(100*sum(inf_112)/n())) # divide the number or rows where value is below 112 by the total number of rows
+```
+
+Ahora lo grafico con un polar plot por subarea
+```{r fig.height=6, message=F, warning=F}
+
+ohbiopor<- ggplot(ohbpor) + 
+    geom_col(aes(y=pct, x=as.factor(season_ccamlr), fill=pct), 
+                 width = 1.5, boundary = -7.5, 
+             colour = "black", size = .25)+
+  facet_wrap(~asd_code, ncol=2)+
+  theme_minimal()+
+  scale_fill_pizza_c(name="% Bajo talla Reclutas")+
+  scale_x_discrete(breaks = seq(from = 2000, to = 2021, by = 1))+
+  scale_y_discrete(breaks = seq(from = 0, to = 100, by = 10))+
+  xlab("")+
+  ylab("% Bajo Talla Recluta (3.6 cm.)")+
+  coord_polar()
+ohbiopor
+
+```
+
+Ahora lo grafico con un polar plot por nacionalidad
+
+```{r fig.height=6, message=F, warning=F}
+
+ohbiopor<- ggplot(ohbpor) + 
+    geom_col(aes(y=pct, x=as.factor(season_ccamlr), fill=pct), 
+                 width = 1.5, boundary = -7.5, 
+             colour = "black", size = .25)+
+  facet_wrap(~vessel_nationality_code, ncol=4)+
+  theme_minimal()+
+  scale_fill_pizza_c(palette = "diavola",
+                     name="% Bajo talla Reclutas")+
+  scale_x_discrete(breaks = seq(from = 2000, to = 2021, by = 1))+
+  scale_y_continuous(breaks = seq(from = 0, to = 100, by = 25))+
+  xlab("")+
+  ylab("% Bajo Talla Recluta (3.6 cm.)")+
+  coord_polar()
+ohbiopor
+```
+
+Ahora saco tallas medias por distintas variables
+
+
+```{r, fig.align="center"}
+meant <-ohbio3 %>% 
+  group_by(season_ccamlr, vessel_name,
+           asd_code, vessel_nationality_code) %>%
+  summarise(avg=mean(Longitud))
+glimpse(meant)
+
+```
+
+
+```{r, fig.align="center", message=F}
+pmea <- ggplot(meant, 
+               aes(season_ccamlr, vessel_nationality_code, 
+                   size=avg, fill= avg))+
+    geom_point(alpha=0.5, shape=21, show.legend = T) +
+    scale_size(range = c(-4,8)) +
+    theme_bw()+ 
+    facet_wrap(.~asd_code)+
+    scale_x_continuous(breaks = seq(from = 2000, to = 2020, by = 2))+
+    #scale_y_discrete(breaks = seq(from = 1, to = 13, by = 1))+
+    theme(axis.text.x = element_text(angle = 90, hjust = 2))+
+    guides(fill = guide_legend(reverse=F))+
+    scale_fill_viridis_c(option="E")+
+    ylab("") +
+    xlab("") 
+pmea
+```
+## Ahora saco las tallas por cada subarea para el modelado
+
+Esta estructura de bins esta supeditada a revision. Este tipo de datos entra al modelado de la poblacion.
+
+```{r}
+t481 <- ohbio3 %>% 
+  filter(asd_code=="481")
+t482 <- ohbio3 %>% 
+  filter(asd_code=="482")
+t483 <- ohbio3 %>% 
+  filter(asd_code=="483")
+```
+
+y genero los datos para entrada al modelo. Deben ser bines de milimetros (0.2). Esto en funcion de representar mejor las dinamicas de crecimiento del Krill.
+
+Por cada subarea
+
+- 48.1
+
+```{r}
+t481$cat_long <- as.numeric(as.character(cut(x = t481$Longitud, 
+                                             breaks = seq(0,10,0.2),
+                                             labels = seq(0,9.8,0.2), right = FALSE)))
+tt481 <- table(t481$season_ccamlr, t481$cat_long )
+
+tt481
+
+
+# A su vez puedo generar el archivo por separado
+#write.csv(tt481, "talla481.csv", sep = ",", row.names = TRUE)
+```
+
+- 48.2
+
+```{r}
+t482$cat_long <- as.numeric(as.character(cut(x = t482$Longitud, 
+                                             breaks = seq(0,10,0.2),
+                                             labels = seq(0,9.8,0.2), right = FALSE)))
+tt482 <- table(t482$season_ccamlr, t482$cat_long )
+
+tt482
+
+
+# A su vez puedo generar el archivo por separado
+#write.csv(tt482, "talla482.csv", sep = ",", row.names = TRUE)
+```
+
+
+
+- 48.3
+
+```{r}
+t483$cat_long <- as.numeric(as.character(cut(x = t483$Longitud, 
+                                             breaks = seq(0,10,0.2),
+                                             labels = seq(0,9.8,0.2), right = FALSE)))
+tt483 <- table(t483$season_ccamlr, t483$cat_long )
+
+tt483
+
+
+# A su vez puedo generar el archivo por separado
+#write.csv(tt483, "talla483.csv", sep = ",", row.names = TRUE)
+```
+
+
+# 3. Pesos Medios
+
+# 4. Krillbase (densidad)
+
+```{r}
+dens <- kb %>% 
+  group_by(SEASON) %>% 
+  summarise(mean_den=mean(STANDARDISED_KRILL_UNDER_1M2))
+
+de <- ggplot(dens, aes(x=SEASON, y=mean_den)) + 
+        geom_point(stat = 'identity', 
+                   colour='blue', fill='blue', alpha=.9, size=2) +
+        stat_smooth(colour='#253494')+
+        scale_x_continuous(breaks = seq(from = 1980, to = 2020, by = 1))+
+        theme_bw()+
+        theme(axis.text.x = element_text(angle = 90, hjust = 2))+
+        #facet_wrap(.~asd_code, ncol =  3)+
+        xlim(1980,2020)+
+        ylab('Densidad Krill (ind/m2)')+
+        xlab('')+
+        ggtitle('Datos KRILLBASE')
+de
+```
+
+

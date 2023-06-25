@@ -1,0 +1,694 @@
+---
+title: "Análisis espacio-temporal datos histórica artesanal de la pesquería de Bacalao"
+subtitle: "Analisis exploratorio 1986-2021"
+author: "Mauricio Mardones I"
+date:  "`r format(Sys.time(), '%d %B, %Y')`"
+format:
+  html:
+    theme: cosmo
+    fontsize: 0.9em
+    linestretch: 1.7
+    html-math-method: katex
+    self-contained: true
+    embed-resources: true
+    code-tools: true
+    toc: true
+    toc-float: true
+    toc-depth: 4
+    link-citations: yes
+linkcolor: blue
+bibliography: bibliography.bib
+csl: apa.csl
+---
+
+```{r setup, include=FALSE, message=F}
+rm(list = ls())
+options(bitmapType = "cairo") 
+#XQuartz is a mess, put this in your onload to default to cairo instead (https://github.com/tidyverse/ggplot2/issues/2655)
+# Lo mapas se hacen mas rapido
+# solo para IOs
+```
+
+
+
+```{r setup2, include=FALSE, message=F}
+knitr::opts_chunk$set(collapse = TRUE, 
+                      comment = "  ", 
+                      fig.align = 'center',
+                      cache=FALSE,
+                      warning = FALSE,
+                      message = FALSE)
+```
+
+
+# ANTECEDENTES
+
+El presente reporte tiene un codigo autocontenido con los Analísis Exploratorios de Datos (AED) de la pesquería de bacalao de profundidad extraído por la flota pesquera artesanal (espinel). Los analisis aca descritos estan compuestos de dos bases. La primera es de los registros oficiales de captura recogidos por el SERNAPESCA. En segundo lugar, se presentan el AED de los datos del monitoreo d la pesqería llevado a cabo por el IFOP  a través del Programa de Seguimiento de Pesquerías Demersales del Departamento de Evaluación de Pesquerías.
+
+El principal objetivo es identificar vacios y fortalezas de los datos en terminos espacio-temporales, y con ello tomar decisiones para el paso posterior de modelación de la dinámica poblacional del recurso para realizar asesoría en terminos de estatus y recomendación de una Captura Biologicamente Aceptable (CBA).
+
+
+## ANÁLISIS EXPLORATORIO DE DATOS (AED)
+
+Cargo librerías necesarias para el análisis exploratorio de los datos de las distintas bases de bitácora, tallas y biológico. 
+
+```{r lib, message=F, echo= TRUE}
+library(here)
+#analisis
+library(ggsignif)
+library(ggrepel)
+library(inlmisc)
+library(nortest) #para testear distribucion
+library(skimr) #provides a frictionless approach to summary statistics w
+library(easystats) # multiples unciones analiticas
+library(lme4)
+library(skimr)
+library(readxl)
+# vizualizacion
+library(ggridges)
+library(sf)
+library(GGally)
+library(tidyverse, quietly = TRUE)
+library(knitr, quietly = TRUE)
+library(kableExtra)
+library(raster)
+library(egg)
+```
+
+
+```{r}
+# A function for dotplots
+multi_dotplot <- function(filename, Xvar, Yvar){
+  filename %>%
+    ggplot(aes(x = {{Xvar}})) +
+    geom_point(aes(y = {{Yvar}}),
+               alpha=0.4) +
+    theme_bw() +
+    coord_flip() +
+    labs(x = "Order of Data")}
+```
+
+Identifico los directorio de trabajo y leo las tres bases de datos; a saber:
+
+- Bitácora 
+- Biologico
+- Tallas
+- Desembarques (1985-2022)
+```{r warning=FALSE, message=FALSE}
+bit <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/BITACORAS ESPINEL bacalao.xlsx", sheet = "BITACORAS_ESPINEL_bacalao")
+long <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/LONGITUD_ESPINEL_bacalao.xlsx")
+bio <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/BIOLOGICO ESPINEL bacalao.xlsx", 
+    sheet = "BIOLOGICO_ESPINEL_bacalao")
+landing <- read_excel("Artesanal_Historica/DESEMBARQUE HISTÓRICO.xlsx", 
+    skip = 2)
+```
+
+Identificamos los registros asociados recurso objetivo
+
+-  Codigo del Recurso: 37
+- Nombre común: Bacalao de profundidad
+- Nombre científico: **Dissostichus eleginoides**
+
+Idetifico los registros por recurso y por base para luego filtrar.
+
+```{r}
+dim(bit)
+table(bit$COD_ESPECIE)
+dim(long)
+table(long$COD_ESPECIE)
+dim(bio)
+table(bio$COD_ESPECIE)
+# las bases de biologicos y longitud solo teienen  registros de bacalao.
+# filtro bitacoras dejando solo bacalao
+bitb <- bit %>% 
+  filter(COD_ESPECIE==37)
+dim(bitb)
+# se eliminan 1208-11074 = 3134 registros
+```
+Identifico ahora los NA en cada base
+```{r}
+colSums(is.na(bitb))
+colSums(is.na(long))
+colSums(is.na(bio))
+```
+Comenzar a trabajar bases por separado
+
+# DESEMBARQUES
+
+Tabla con los desembarques oficiales (Sernapesca, 2022)
+
+
+```{r}
+
+kbl(landing, booktabs = T,format = "html",
+    caption = "Desembarque Bacalao Artesanal por Región") %>%
+    kable_styling(latex_options = c("striped",
+                                  "condensed","scale_down"),
+                full_width = FALSE) 
+```
+Ploteo los desembarques por region y por año
+
+
+```{r}
+landing <- as.data.frame(lapply(landing, as.double))
+str(landing)
+summary(landing)
+landing2 <- landing %>% 
+  pivot_longer(cols=c("AyP"  , "TPCA"  ,"ANTOF", "ATCMA", "COQ",
+               "VALPO" ,"LGBO" , "MAULE", "ÑUBLE", "BBIO" , "ARAUC",
+               "RIOS" , "LAGOS", "AYSEN", "MAG"), 
+               names_to = "REGION", 
+               values_to = "CAPTURA") %>% 
+  rename(AÑO="...1") %>% 
+  dplyr::select(-2)
+
+```
+Genero un gráfico  de barras
+
+```{r}
+
+landing2$REGION <- factor(landing2$REGION , 
+                          levels = c("AyP"  , "TPCA"  ,"ANTOF", "ATCMA", "COQ",
+               "VALPO" ,"LGBO" , "MAULE", "ÑUBLE", "BBIO" , "ARAUC",
+               "RIOS" , "LAGOS", "AYSEN", "MAG"))
+desem <- ggplot(landing2 %>% 
+                   drop_na(REGION),aes(AÑO, CAPTURA, fill=REGION)) +
+  geom_bar(stat="identity")+
+  scale_fill_viridis_d(option="G")+
+  theme_minimal()+
+  scale_x_continuous(breaks = seq(from = 1985, to = 2022, by = 4))+
+  scale_y_continuous(breaks = seq(from = 0, to = 4000, by = 1000))+
+  theme(axis.text.x = element_text(angle = 90, hjust = 2),
+        panel.grid = element_blank(),
+        legend.position = "none")+
+  facet_wrap(~REGION, ncol=3)+
+  labs(y="Captura (t)",
+       x="")
+desem
+
+```
+Los principales desembarques estan asociados a las regiones de Antifagasta, Valparaiso y BioBIo pero solo durante los primeros años (1985- mediados del 2000). Luego de esto, todas las regiones vieron disminuidos los registros de extracción del recurso.
+
+# BITÁCORA
+
+Esta base tiene como principal objetivo obtener un indicador de esfuerzo para calcular un indice de abundancia relativo como la CPUE.
+
+Primero identifico la estructura de la base
+
+```{r eval=FALSE}
+glimpse(bitb)
+```
+
+ahora las estadísticas descriptivas de las variables de intéres. En este caso `dfp`, `PESO_corr`, `prof_med`
+
+Miramos los oultiers de los datos 
+```{r }
+# OUTLIERS
+
+#Order data
+bitb <- bitb %>%
+  mutate(order = seq(1:nrow(bitb)))
+
+#Select continuous variables to plot
+p1 <- multi_dotplot(bitb, order, dfp)
+p2 <- multi_dotplot(bitb, order, PESO_corr)
+p3 <- multi_dotplot(bitb, order, prof_med)
+p4 <- multi_dotplot(bitb, order, N_TRIPULANTES)
+p5 <- multi_dotplot(bitb, order, HORAS_REPOSO)
+p6 <- multi_dotplot(bitb, order, NUMERO_DE_ANZUELOS)
+
+#Plot as a grid
+ggarrange(p1, p2, p3, p4,p5, p6,  nrow = 3)
+```
+
+#### Remuevo outliers
+
+
+Los datos de profundidades andan bien, Filtro los datos de  la variable `dfp` entre 0 y 30 días. y repito la inspección
+```{r}
+bitb2 <- bitb %>% 
+  filter(dfp>0,
+         dfp<60,
+         PESO_corr<30000,
+         N_TRIPULANTES<30,
+         NUMERO_DE_ANZUELOS<4000)
+```
+
+Miro nuenvamente los datos filtrados
+
+```{r}
+# OUTLIERS
+
+#Order data
+bitb2 <- bitb2 %>%
+  mutate(order = seq(1:nrow(bitb2)))
+
+#Select continuous variables to plot
+p1a <- multi_dotplot(bitb2, order, dfp)
+p2a <- multi_dotplot(bitb2, order, PESO_corr)
+p3a <- multi_dotplot(bitb2, order, prof_med)
+p4a <- multi_dotplot(bitb2, order, N_TRIPULANTES)
+p5a <- multi_dotplot(bitb2, order, HORAS_REPOSO)
+p6a <- multi_dotplot(bitb2, order, NUMERO_DE_ANZUELOS)
+
+#Plot as a grid
+ggarrange(p1a, p2a, p3a, p4a, p5a, p6a,  nrow = 3)
+```
+
+
+Identifico las dimensionesd e la nueva base y la comparo con la anterior
+
+```{r}
+dim(bitb2)
+dim(bitb)
+table(bitb2$año)
+```
+
+Los registros se minimiza en ciertos años lo cual genera problemas en la fiabilidad de la estimación.
+
+ahora calculamos el rendimiento nominal
+
+### CPUE Nominal
+
+La medida de esfuerzo será `dfp`. Exploramos la variable.
+
+```{r}
+# Frequency polygon plot for catch
+his <- ggplot(bitb2, aes(dfp)) +
+  geom_freqpoly(bins = 5) +
+  labs(x = "dfp", y = "Frequency") +
+  theme_bw() +
+  theme(panel.border = element_rect(colour = "black", 
+                                    fill=NA, size = 1))
+# Patterns in the variance? (any lack of homogeneity)
+point <- ggplot(bitb2 %>% 
+                  filter(PESO_corr>1000), aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 5, alpha = 0.6) +
+  stat_smooth(method = "lm")+
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, size = 1)) +
+  theme(strip.background = element_rect(fill = "white", 
+                   color = "white", size = 1)) +
+  theme(text = element_text(size=13)) +
+  xlab("dfp") + ylab("Peso Corregido")
+
+
+#Plot as a grid
+ggarrange(his, point,  nrow = 1)
+```
+Tendencia del esfuerzo `dfp` a través de los años y por región
+
+```{r warning =FALSE}
+effor <- ggplot(bitb2 %>%
+                  group_by(año, REGION_PUERTO_RECALADA) %>% 
+                  summarise(DFPM=mean(dfp)),
+                aes(año, DFPM))+
+  geom_point(shape = 16, size = 3, alpha = 0.7)+
+  scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 1))+
+  geom_smooth(method = 'lm', 
+              colour = 'blue', 
+              size = 1.5)+
+  facet_wrap(~REGION_PUERTO_RECALADA, ncol=5)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 2),
+        panel.grid = element_blank())+
+  labs(y="Effort (dfp)",
+       x="")
+effor
+```
+
+Tendencia del esfuerzo `NUMERO_DE_ANZUELOS` a través de los años y por región
+
+
+
+```{r warning =FALSE}
+efforanz <- ggplot(bitb2 %>%
+                  group_by(año, REGION_PUERTO_RECALADA) %>% 
+                  summarise(NANZ=mean(NUMERO_DE_ANZUELOS)),
+                aes(año, NANZ))+
+  geom_point(shape = 16, size = 3, alpha = 0.7)+
+  scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 1))+
+  geom_smooth(method = 'lm', 
+              colour = 'green', 
+              size = 1.5)+
+  facet_wrap(~REGION_PUERTO_RECALADA, ncol=5)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 2),
+        panel.grid = element_blank())+
+  labs(y="Effort (dfp)",
+       x="")
+efforanz
+```
+
+Calculo los ceros
+
+```{r}
+#CALCULATE NUMBER OF ZEROS
+
+# What is the percentage of zeros i the response variable
+
+round(sum(bitb2$dfp == 0) * 100 / nrow(bitb2),0)
+#0
+```
+Interacciones
+```{r}
+# Interactions
+
+# Year x season
+ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
+  theme_bw() +
+  xlab("Points") + ylab("Catch") +
+  facet_grid(año~trim)
+# No
+```
+
+
+```{r}
+# Year x habitat
+ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
+  theme_bw() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(año~N_TRIPULANTES)
+# Perhaps
+```
+
+
+```{r}
+# Season x habitat
+ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
+  theme_bw() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(trim~N_TRIPULANTES)
+# CPUE slope varies between habitats - interaction
+```
+
+
+```{r}
+# Categorizar la variable continua en 4 niveles
+bitb2$prof_med_cat <- cut(bitb2$prof_med, breaks = 4, labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto"))
+
+# Oxbow x habitat
+ggplot(bitb2 %>% 
+         drop_na(prof_med_cat), 
+       aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', 
+              colour = 'red', 
+              se = FALSE) +
+  theme_bw() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(prof_med_cat~año)
+```
+Profundidad por region
+
+```{r}
+profu <- ggplot(bitb2, aes(REGION_PUERTO_RECALADA, desc(prof_med), 
+                            group=REGION_PUERTO_RECALADA))+
+  geom_boxplot(fill=2, alpha=.5)+
+  geom_jitter(size=0.4, alpha=0.2,
+              width = .25)+
+  #facet_wrap(~año)+
+  theme_bw()+
+  scale_x_continuous(breaks = seq(from = 1, to = 15, by = 1))+
+  labs(x="Región",
+       y="Profundidad (mts)")
+profu
+```
+### Correlaciones 
+
+Análisis de utilidad para identificar a traves de un metodo de corrrelación de pearson, la correlación en tre las variables que serán utilizadas en la estandariacion de la CPUEPrimero identifico las variables a correlacionar
+```{r}
+bitb3 <- bitb2 %>%
+  dplyr::select(8,23,24,26, 34, 39, 64, 67) 
+
+results <- correlation(bitb3)
+
+glimpse(bitb3)
+results %>%
+  summary(redundant=TRUE) %>% 
+  plot(results, show_data = "points")+
+  theme_bw()
+```
+
+```{r}
+ggplot(bitb2, aes(x = nombre_puerto_recalada , y = dfp, fill = nombre_puerto_recalada )) +
+  geom_violindot(fill_dots = "black") +
+  theme_modern() +
+  scale_fill_material_d()
+
+ggplot(bitb2, aes(x = as.factor(REGION_PUERTO_RECALADA ), 
+                  y = bitb2$NUMERO_DE_ANZUELOS, 
+                  fill = as.factor(REGION_PUERTO_RECALADA))) +
+  geom_violin() +
+  theme_modern() +
+  scale_fill_material_d(palette="ice",
+                        name="REGION")
+
+```
+
+
+Ahora estimo la CPUE, la cual es el rendimoento entre el esfuerzo y la csaptura.
+
+```{r}
+bitb2 <- bitb2 %>% 
+  mutate(CPUE = PESO_corr/dfp)
+
+```
+Interaccion de la variable
+
+```{r}
+# Year x season
+ggplot(bitb2, aes(x = PESO_corr, y = (CPUE))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
+  theme_bw()+
+  xlab("Catch") + ylab("CPUE") +
+  facet_grid(año~N_TRIPULANTES)
+```
+
+
+ploteo los datos de CPUE totales.
+
+```{r}
+# para compara con la base original 
+#bitb3 <- bitb %>% 
+#  mutate(CPUE = PESO_corr/dfp)
+
+cpuen <- ggplot(bitb2 %>%
+                  group_by(año, zona) %>% 
+                  summarise(CPUEM=mean(CPUE)),
+                aes(año, CPUEM))+
+  geom_point(shape = 16, size = 3, alpha = 0.7)+
+  scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 1))+
+  geom_smooth(method = 'loess', 
+              colour = 'red', 
+              size = 1.5)+
+  facet_wrap(~zona)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 2),
+        panel.grid = element_blank())+
+  labs(y="CPUE (kg/dfp)",
+       x="")
+cpuen
+  
+```
+### CPUE Estandarizada
+
+Identificar los proncipales factores para modelar la variable.
+
+
+
+# COMPOSICIONES DE TALLAS
+
+La información contenida en las estructiras de tallas son consideradas una de las piezas mas importantes en la ciencia pesquera [@Canales2021; @Hordyk2014; @Rudd2018]. Sin embargo, esta debe ser validada y confirmada para no violar supuestos referidos a la repreentatividad del dato y su relación con la dinámica poblacional.
+
+Ahora nos disponemos a explorar esta fuente de información.
+
+
+Primero identificamos la estructura de la base;
+
+```{r}
+glimpse(long)
+```
+Primero selecciono las columnas de interes y luego genero la expansión de `LONGITUD_MUESTRA` a `N_INDIVIDUOS`. Expand frecuency data related length, in this case `N_INDIVIDUOS` column have frecuency that we need expand to whole data frame. 
+
+Selecciono variables de interes
+
+```{r}
+long1 <- long %>% 
+  dplyr::select(6,8,11,12,21,22,23,24)
+dim(long1)
+```
+
+
+```{r warning=FALSE}
+long2 <- long %>% 
+  drop_na(N_INDIVIDUOS) %>% 
+  type.convert(as.is = TRUE) %>% 
+  uncount(N_INDIVIDUOS)
+
+dim(long2)
+```
+
+```{r warning=FALSE, message=F}
+legend.labels <- c('Indet.', 'Macho' , 'Hembra')
+nbco <- ggplot(long2, aes(x=LONGITUD_MUESTRA, y = as.factor(año),
+                         fill=as.factor(SEXO)))+
+  geom_density_ridges(stat = "density_ridges", bins = 20, 
+                      scale = 2, draw_baseline = FALSE,
+                      alpha=0.5)+
+  facet_wrap(.~REGION, ncol=5) +
+  geom_vline(xintercept = 110, color = "red")+
+  scale_fill_viridis_d(option = "C",
+                       name="SEXO",
+                       labels=legend.labels)+
+  scale_y_discrete(breaks = seq(from = 2004, to = 2022, by = 2))+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme_minimal()+
+  xlab("Longitud (cm.)")+
+  ylab("")
+#scale_x_discrete((limits = rev(levels(talla2021$ANO_ARR))))+
+nbco
+
+```
+
+
+### Prepara los vectores para sumar a los .dat del modelo si los necesito.
+
+
+```{r}
+long2$LONG_CAT <- as.numeric(as.character(cut(x = long2$LONGITUD_MUESTRA, 
+                                              breaks = seq(10,220,2), 
+                                              labels = seq(10,218,2),
+                                              right = FALSE)))
+LONGT <- table(long2$año, long2$LONG_CAT)
+LONGT
+```
+
+
+```{r eval=FALSE}
+write.csv()
+```
+
+
+# MAPAS
+
+Lo primero es transformar los datos de `lon_ctgr` y `lat_ctgr` a formarto geom. A su vez, saco las NA de las coord
+
+transformar los datos en un sf object
+```{r}
+codmap <- st_as_sf(bitb2 %>% 
+                    drop_na(lon_ctgr) %>% 
+                    drop_na(lat_ctgr), 
+                   coords = c("lon_ctgr", "lat_ctgr"),  crs = 4326)
+```
+
+Ahora genero los mapas de Chile con un raster.
+```{r}
+chile <- raster::getData("GADM", country = "CHL", level = 1)
+chile1<-fortify(chile)
+
+# chilemap <- ggplot()+
+#   geom_polygon(data=chile1, aes(x=long, y=lat, group=group), 
+#              fill="lightblue",color="grey20", size=0.15)+
+#   coord_sf(crs = st_crs(4326), 
+#            xlim = c(-80, -65), 
+#            ylim = c(-58, -15)) +
+#          theme_bw()
+# chilemap
+# Aca veo los nombres
+chile@data$NAME_1
+```
+
+Luego genero los bordes sobre los cuales haré la grilla.
+```{r}
+e <- extent(-80,-65,-58,-15)
+rc <- crop(chile, e)
+proj4string(rc) <- CRS("+init=epsg:4326")
+# la proyección adecuada en lat long
+chile2 <- st_as_sf(rc) # para dejarlo en formato geom_sf
+```
+
+Se estructura la grilla en el objeto raster de `chile1`
+```{r}
+grid <- chile2 %>%
+  st_make_grid(cellsize = c(1,1)) %>% # para que quede cuadrada
+  st_cast("MULTIPOLYGON") %>%
+  st_sf() %>% # objeto en spatial feature
+  mutate(cellid = row_number())
+```
+
+
+Pongo los datos `codmap` en la grilla. Aca solo elegí `dfp`y `CPUE` pero se ùeden resumir otros
+```{r}
+joindat <- grid %>%
+  st_join(codmap) %>% 
+  group_by(cellid, año) %>% 
+  summarise(CPUEM = mean(CPUE),
+            DFPM =mean(dfp)) # por ejemplo, plotear la captura "CAPTURA_1"
+```
+Mapa Esfuerzo
+
+```{r fig.cap= "Cambios espaciotempiorales del esfuerzo pesquero en bacalao APA. Linea roja representa el 47ºS"}
+## Plot final
+mas1 <- ggplot() +
+  geom_sf(data=joindat %>% 
+             filter(!is.na(DFPM)), aes(fill = DFPM),
+          color=NA) +
+  scale_fill_viridis_b(option="E",
+                       direction=-1, name="DFP")+
+  geom_sf(data = grid,  fill=NA, color=NA) +
+  geom_sf(data = chile2, color=NA) +
+  coord_sf() +
+  geom_hline(yintercept = -47, color = "red")+
+  scale_alpha(guide="none")+
+  facet_wrap(~año, ncol=6)+
+  scale_x_continuous(breaks = seq(from = -80, to = -60, by = 10))+
+  xlab(expression(paste(Longitude^o,~'O'))) +
+  ylab(expression(paste(Latitude^o,~'S')))+
+  guides(colour = guide_legend()) +
+  theme_bw()+
+  theme(panel.background = element_rect(fill = 'white'),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+mas1
+```
+Mapa CPUE
+
+```{r fig.cap= "Cambios espaciotempiorales del rendimiento pesquero en bacalao APA. Linea roja representa el 47ºS"}
+## Plot final
+mas2 <- ggplot() +
+  geom_sf(data=joindat %>% 
+             filter(!is.na(CPUEM)), aes(fill = CPUEM),
+          color=NA) +
+  scale_fill_viridis_b(option="G",
+                       direction=-1, name="CPUE (captura/dfp)")+
+  geom_sf(data = grid,  fill=NA, color=NA) +
+  geom_sf(data = chile2, color=NA) +
+  coord_sf() +
+  geom_hline(yintercept = -47, color = "red")+
+  scale_alpha(guide="none")+
+  facet_wrap(~año, ncol=6)+
+  scale_x_continuous(breaks = seq(from = -80, to = -60, by = 10))+
+  xlab(expression(paste(Longitude^o,~'O'))) +
+  ylab(expression(paste(Latitude^o,~'S')))+
+  guides(colour = guide_legend()) +
+  theme_bw()+
+  theme(panel.background = element_rect(fill = 'white'),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
+mas2
+```
+Falta componer mapas de tallas medias y alguna otra variable de interés.
+
+# CONCLUSION 
+
+En función de los datos analizados, el modelo propuesto es un enfoque de producción global estao espacio descrito por @Pedersen2017 y @ICES2015.
+
+# REFERENCIAS
