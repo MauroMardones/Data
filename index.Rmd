@@ -593,15 +593,14 @@ Ahora genero los mapas de Chile con un raster.
 ```{r}
 chile <- raster::getData("GADM", country = "CHL", level = 1)
 chile1<-fortify(chile)
-
 # chilemap <- ggplot()+
-#   geom_polygon(data=chile1, aes(x=long, y=lat, group=group), 
-#              fill="lightblue",color="grey20", size=0.15)+
-#   coord_sf(crs = st_crs(4326), 
-#            xlim = c(-80, -65), 
-#            ylim = c(-58, -15)) +
-#          theme_bw()
-# chilemap
+#    geom_polygon(data=chile, aes(x=long, y=lat, group=group), 
+#               fill="lightblue",color="grey20", size=0.15)+
+#    coord_sf(crs = st_crs(4326), 
+#             xlim = c(-80, -65), 
+#             ylim = c(-58, -15)) +
+#           theme_bw()
+#  chilemap
 # Aca veo los nombres
 chile@data$NAME_1
 ```
@@ -641,10 +640,10 @@ mas1 <- ggplot() +
   geom_sf(data=joindat %>% 
              filter(!is.na(DFPM)), aes(fill = DFPM),
           color=NA) +
-  scale_fill_viridis_b(option="E",
+  scale_fill_viridis_c(option="E",
                        direction=-1, name="DFP")+
   geom_sf(data = grid,  fill=NA, color=NA) +
-  geom_sf(data = chile2, color=NA) +
+  geom_sf(data = chile2, color="grey", fill="white") +
   coord_sf() +
   geom_hline(yintercept = -47, color = "red")+
   scale_alpha(guide="none")+
@@ -670,11 +669,11 @@ mas2 <- ggplot() +
   scale_fill_viridis_b(option="G",
                        direction=-1, name="CPUE (captura/dfp)")+
   geom_sf(data = grid,  fill=NA, color=NA) +
-  geom_sf(data = chile2, color=NA) +
+  geom_sf(data = chile2, color="grey", fill="white") +
   coord_sf() +
   geom_hline(yintercept = -47, color = "red")+
   scale_alpha(guide="none")+
-  facet_wrap(~año, ncol=6)+
+  #facet_wrap(~año, ncol=6)+
   scale_x_continuous(breaks = seq(from = -80, to = -60, by = 10))+
   xlab(expression(paste(Longitude^o,~'O'))) +
   ylab(expression(paste(Latitude^o,~'S')))+
