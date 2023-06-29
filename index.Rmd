@@ -48,7 +48,7 @@ El presente reporte tiene un codigo autocontenido con los Analísis Exploratorio
 El principal objetivo es identificar vacios y fortalezas de los datos en terminos espacio-temporales, y con ello tomar decisiones para el paso posterior de modelación de la dinámica poblacional del recurso para realizar asesoría en terminos de estatus y recomendación de una Captura Biologicamente Aceptable (CBA).
 
 
-## ANÁLISIS EXPLORATORIO DE DATOS (AED)
+# ANÁLISIS EXPLORATORIO DE DATOS (AED)
 
 Cargo librerías necesarias para el análisis exploratorio de los datos de las distintas bases de bitácora, tallas y biológico. 
 
@@ -57,6 +57,7 @@ library(here)
 #analisis
 library(ggsignif)
 library(ggrepel)
+library(ggpubr)
 library(inlmisc)
 library(nortest) #para testear distribucion
 library(skimr) #provides a frictionless approach to summary statistics w
@@ -90,17 +91,22 @@ multi_dotplot <- function(filename, Xvar, Yvar){
 
 Identifico los directorio de trabajo y leo las tres bases de datos; a saber:
 
+- Datos FIP (Rendimiento) 96-32
 - Bitácora 
 - Biologico
 - Tallas
 - Desembarques (1985-2022)
 ```{r warning=FALSE, message=FALSE}
-bit <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/BITACORAS ESPINEL bacalao.xlsx", sheet = "BITACORAS_ESPINEL_bacalao")
+bit <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/BITACORAS ESPINEL bacalao.xlsx", sheet = "BITACORAS_ESPINEL_bacalao",  guess_max = 100000)
 long <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/LONGITUD_ESPINEL_bacalao.xlsx")
 bio <- read_excel("Artesanal_Historica/datos Bacalao historico 1997-2022CTP/BIOLOGICO ESPINEL bacalao.xlsx", 
     sheet = "BIOLOGICO_ESPINEL_bacalao")
 landing <- read_excel("Artesanal_Historica/DESEMBARQUE HISTÓRICO.xlsx", 
     skip = 2)
+bit8696<- read.csv2("bit_art_86_20.csv",sep=",", header = T)
+
+
+bit$POTENCIA_MOTOR_EQ <- as.numeric(bit$POTENCIA_MOTOR_EQ)
 ```
 
 Identificamos los registros asociados recurso objetivo
@@ -121,7 +127,10 @@ table(bio$COD_ESPECIE)
 # las bases de biologicos y longitud solo teienen  registros de bacalao.
 # filtro bitacoras dejando solo bacalao
 bitb <- bit %>% 
-  filter(COD_ESPECIE==37)
+  filter(COD_ESPECIE==37)%>% 
+  mutate(dfp = as.double(dfp), 
+         PESO_corr = as.double(PESO_corr),
+         prof_med=as.double(prof_med))
 dim(bitb)
 # se eliminan 1208-11074 = 3134 registros
 ```
@@ -133,7 +142,7 @@ colSums(is.na(bio))
 ```
 Comenzar a trabajar bases por separado
 
-# DESEMBARQUES
+## DESEMBARQUES
 
 Tabla con los desembarques oficiales (Sernapesca, 2022)
 
@@ -189,7 +198,7 @@ desem
 ```
 Los principales desembarques estan asociados a las regiones de Antifagasta, Valparaiso y BioBIo pero solo durante los primeros años (1985- mediados del 2000). Luego de esto, todas las regiones vieron disminuidos los registros de extracción del recurso.
 
-# BITÁCORA
+## BITÁCORA
 
 Esta base tiene como principal objetivo obtener un indicador de esfuerzo para calcular un indice de abundancia relativo como la CPUE.
 
@@ -226,12 +235,13 @@ ggarrange(p1, p2, p3, p4,p5, p6,  nrow = 3)
 
 Los datos de profundidades andan bien, Filtro los datos de  la variable `dfp` entre 0 y 30 días. y repito la inspección
 ```{r}
-bitb2 <- bitb %>% 
+bitb2 <- bitb  %>% 
   filter(dfp>0,
-         dfp<60,
-         PESO_corr<30000,
+         dfp<80,
+         PESO_corr<50000,
          N_TRIPULANTES<30,
-         NUMERO_DE_ANZUELOS<4000)
+         NUMERO_DE_ANZUELOS<40000)
+
 ```
 
 Miro nuenvamente los datos filtrados
@@ -459,6 +469,11 @@ Ahora estimo la CPUE, la cual es el rendimoento entre el esfuerzo y la csaptura.
 bitb2 <- bitb2 %>% 
   mutate(CPUE = PESO_corr/dfp)
 
+
+# para identificar dif
+bitb <- bitb %>% 
+  mutate(CPUE = PESO_corr/dfp)
+
 ```
 Interaccion de la variable
 
@@ -480,21 +495,26 @@ ploteo los datos de CPUE totales.
 #bitb3 <- bitb %>% 
 #  mutate(CPUE = PESO_corr/dfp)
 
-cpuen <- ggplot(bitb2 %>%
+cpuen <- ggplot(bitb %>%
                   group_by(año, zona) %>% 
-                  summarise(CPUEM=mean(CPUE)),
+                  summarise(CPUEM=mean(CPUE)) %>% 
+                  filter(CPUEM<600,
+                         año>1996),
                 aes(año, CPUEM))+
   geom_point(shape = 16, size = 3, alpha = 0.7)+
   scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 1))+
-  geom_smooth(method = 'loess', 
+  geom_smooth(method = 'lm', 
               colour = 'red', 
               size = 1.5)+
-  facet_wrap(~zona)+
+  # stat_regline_equation(label.x=2007, label.y=500)+
+  # stat_cor(aes(label=..rr.label..), label.x=2007, label.y=450)+
+  #facet_wrap(~zona)+
   theme_bw()+
   theme(axis.text.x = element_text(angle = 90, hjust = 2),
         panel.grid = element_blank())+
   labs(y="CPUE (kg/dfp)",
-       x="")
+       x="")+
+  ylim(-10, 600)
 cpuen
   
 ```
@@ -502,9 +522,15 @@ cpuen
 
 Identificar los proncipales factores para modelar la variable.
 
+Luego de una reunión con Seguimiento (Patricio Galvez) se indicaron algunos aspectos que deben ser considerados en la estandariación.
+
+- El poder de pesca  (tipo de embarcación) es mayor en la zona centro sur de Chile. Identificar equilibrio de la base `bit` respecto a este dato.
+
+- Usar zonas como factor en desmedro de región.
 
 
-# COMPOSICIONES DE TALLAS
+
+## COMPOSICIONES DE TALLAS
 
 La información contenida en las estructiras de tallas son consideradas una de las piezas mas importantes en la ciencia pesquera [@Canales2021; @Hordyk2014; @Rudd2018]. Sin embargo, esta debe ser validada y confirmada para no violar supuestos referidos a la repreentatividad del dato y su relación con la dinámica poblacional.
 
@@ -537,6 +563,7 @@ dim(long2)
 ```
 
 ```{r warning=FALSE, message=F}
+
 legend.labels <- c('Indet.', 'Macho' , 'Hembra')
 nbco <- ggplot(long2, aes(x=LONGITUD_MUESTRA, y = as.factor(año),
                          fill=as.factor(SEXO)))+
@@ -577,7 +604,35 @@ write.csv()
 ```
 
 
-# MAPAS
+## BITACORA FIPA 96- 14
+
+```{r}
+
+cpuefipa <- ggplot(bit8696 %>%
+                     filter(ANO<1997) %>% 
+                     mutate(CPUE=as.double(CPUE)) %>%
+                  group_by(ANO, AREA) %>% 
+                  summarise(CPUEF=mean(CPUE)),
+                aes(ANO, CPUEF))+
+  geom_point(shape = 16, size = 3, alpha = 0.7)+
+  scale_x_continuous(breaks = seq(from = 1986, to = 2022, by = 1))+
+  geom_smooth(method = 'lm', 
+              colour = 'blue', 
+              size = 1.5)+
+  # stat_regline_equation(label.x=1993, label.y=500)+
+  # stat_cor(aes(label=..rr.label..), label.x=1993, label.y=450)+
+  #facet_wrap(~AREA)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 2),
+        panel.grid = element_blank())+
+  labs(y="CPUE (kg/dfp)",
+       x="")
+cpuefipa
+  
+```
+
+
+## MAPAS
 
 Lo primero es transformar los datos de `lon_ctgr` y `lat_ctgr` a formarto geom. A su vez, saco las NA de las coord
 
