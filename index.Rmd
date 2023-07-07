@@ -493,7 +493,7 @@ ploteo los datos de CPUE totales.
 #bitb3 <- bitb %>% 
 #  mutate(CPUE = PESO_corr/dfp)
 
-cpuen <- ggplot(bitb2 %>%
+cpuen <- ggplot(bitb %>%
                   group_by(año) %>% 
                   summarise(CPUEM=mean(CPUE)) %>% 
                   filter(CPUEM<600,
