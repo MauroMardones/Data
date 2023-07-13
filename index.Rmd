@@ -74,6 +74,9 @@ library(knitr, quietly = TRUE)
 library(kableExtra)
 library(raster)
 library(egg)
+library(car) #Variance inflation Factor
+library(ggthemes)
+library(sjPlot)
 ```
 
 
@@ -123,21 +126,9 @@ table(long$COD_ESPECIE)
 dim(bio)
 table(bio$COD_ESPECIE)
 # las bases de biologicos y longitud solo teienen  registros de bacalao.
-# filtro bitacoras dejando solo bacalao
-bitb <- bit %>% 
-  filter(COD_ESPECIE==37)%>% 
-  mutate(dfp = as.double(dfp), 
-         PESO_corr = as.double(PESO_corr),
-         prof_med=as.double(prof_med))
-dim(bitb)
-# se eliminan 1208-11074 = 3134 registros
+
 ```
-Identifico ahora los NA en cada base
-```{r}
-colSums(is.na(bitb))
-colSums(is.na(long))
-colSums(is.na(bio))
-```
+
 Comenzar a trabajar bases por separado
 
 ## DESEMBARQUES
@@ -200,7 +191,20 @@ Los principales desembarques estan asociados a las regiones de Antifagasta, Valp
 
 Esta base tiene como principal objetivo obtener un indicador de esfuerzo para calcular un indice de abundancia relativo como la CPUE.
 
-Primero identifico la estructura de la base
+
+
+Primero identifico la estructura de la base y filtro el rrecurso bacalao
+```{r}
+# filtro bitacoras dejando solo bacalao
+bitb <- bit %>% 
+  filter(COD_ESPECIE==37)%>% 
+  mutate(dfp = as.double(dfp), 
+         PESO_corr = as.double(PESO_corr),
+         prof_med=as.double(prof_med))
+dim(bitb)
+
+```
+se eliminan 1208-11074 = 3134 registros
 
 ```{r eval=FALSE}
 glimpse(bitb)
@@ -278,7 +282,20 @@ ahora calculamos el rendimiento nominal
 
 ### CPUE Nominal
 
-La medida de esfuerzo será `dfp`. Exploramos la variable.
+Ahora estimo la CPUE, la cual es el rendimoento entre el esfuerzo y la captura. La medida de esfuerzo será `dfp`. También calculo un rendimiento con la variable de esfuerzo `HORAS_REPOSO` pero solo como antecedente dado que no tengo muchos datos.
+
+
+
+```{r}
+bitb2 <- bitb2 %>% 
+  mutate(CPUE = PESO_corr/dfp) %>% 
+  mutate(CPUE2 =PESO_corr/HORAS_REPOSO)
+bitb2$prof_med_cat <- cut(bitb2$prof_med, 
+                          breaks = c(500, 1000, 1500,
+                                     2000, 3000))
+```
+
+
 
 ```{r}
 # Frequency polygon plot for catch
@@ -317,7 +334,7 @@ effor <- ggplot(bitb2 %>%
               colour = 'blue', 
               size = 1.5)+
   facet_wrap(~REGION_PUERTO_RECALADA, ncol=5)+
-  theme_bw()+
+  theme_few()+
   theme(axis.text.x = element_text(angle = 90, hjust = 2),
         panel.grid = element_blank())+
   labs(y="Effort (dfp)",
@@ -340,7 +357,7 @@ efforanz <- ggplot(bitb2 %>%
               colour = 'green', 
               size = 1.5)+
   facet_wrap(~REGION_PUERTO_RECALADA, ncol=5)+
-  theme_bw()+
+  theme_few()+
   theme(axis.text.x = element_text(angle = 90, hjust = 2),
         panel.grid = element_blank())+
   labs(y="Effort (dfp)",
@@ -348,7 +365,7 @@ efforanz <- ggplot(bitb2 %>%
 efforanz
 ```
 
-Calculo los ceros
+Calculo los ceros de `dfp`
 
 ```{r}
 #CALCULATE NUMBER OF ZEROS
@@ -359,6 +376,7 @@ round(sum(bitb2$dfp == 0) * 100 / nrow(bitb2),0)
 #0
 ```
 Interacciones
+
 ```{r}
 # Interactions
 
@@ -374,7 +392,7 @@ ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
 
 
 ```{r}
-# Year x habitat
+
 ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
   geom_point(shape = 16, size = 3, alpha = 0.7) +
   geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
@@ -386,7 +404,7 @@ ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
 
 
 ```{r}
-# Season x habitat
+
 ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
   geom_point(shape = 16, size = 3, alpha = 0.7) +
   geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
@@ -397,22 +415,6 @@ ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
 ```
 
 
-```{r}
-# Categorizar la variable continua en 4 niveles
-bitb2$prof_med_cat <- cut(bitb2$prof_med, breaks = 4, labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto"))
-
-# Oxbow x habitat
-ggplot(bitb2 %>% 
-         drop_na(prof_med_cat), 
-       aes(x = dfp, y = (PESO_corr))) +
-  geom_point(shape = 16, size = 3, alpha = 0.7) +
-  geom_smooth(method = 'lm', 
-              colour = 'red', 
-              se = FALSE) +
-  theme_bw() +
-  xlab("dfp") + ylab("Catch") +
-  facet_grid(prof_med_cat~año)
-```
 Profundidad por region
 
 ```{r}
@@ -428,21 +430,7 @@ profu <- ggplot(bitb2, aes(REGION_PUERTO_RECALADA, desc(prof_med),
        y="Profundidad (mts)")
 profu
 ```
-### Correlaciones 
 
-Análisis de utilidad para identificar a traves de un metodo de corrrelación de pearson, la correlación en tre las variables que serán utilizadas en la estandariacion de la CPUEPrimero identifico las variables a correlacionar
-```{r}
-bitb3 <- bitb2 %>%
-  dplyr::select(8,23,24,26, 34, 39, 64, 67) 
-
-results <- correlation(bitb3)
-
-glimpse(bitb3)
-results %>%
-  summary(redundant=TRUE) %>% 
-  plot(results, show_data = "points")+
-  theme_bw()
-```
 
 ```{r}
 ggplot(bitb2, aes(x = nombre_puerto_recalada , y = dfp, fill = nombre_puerto_recalada )) +
@@ -460,71 +448,46 @@ ggplot(bitb2, aes(x = as.factor(REGION_PUERTO_RECALADA ),
 
 ```
 
-
-Ahora estimo la CPUE, la cual es el rendimoento entre el esfuerzo y la csaptura.
-
 ```{r}
-bitb2 <- bitb2 %>% 
-  mutate(CPUE = PESO_corr/dfp)
-
-
-# para identificar dif
-bitb <- bitb %>% 
-  mutate(CPUE = PESO_corr/dfp)
-
-```
-Interaccion de la variable
-
-```{r}
-# Year x season
-ggplot(bitb2, aes(x = PESO_corr, y = (CPUE))) +
+ggplot(bitb2 %>% 
+         drop_na(prof_med_cat), 
+       aes(x = dfp, y = (PESO_corr))) +
   geom_point(shape = 16, size = 3, alpha = 0.7) +
-  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
-  theme_bw()+
-  xlab("Catch") + ylab("CPUE") +
-  facet_grid(año~N_TRIPULANTES)
+  geom_smooth(method = 'lm', 
+              colour = 'red', 
+              se = FALSE) +
+  theme_few() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(prof_med_cat~año)
 ```
-
 
 ploteo los datos de CPUE totales.
 
-```{r}
-# para compara con la base original 
-#bitb3 <- bitb %>% 
-#  mutate(CPUE = PESO_corr/dfp)
 
-cpuen <- ggplot(bitb %>%
-                  group_by(año) %>% 
-                  summarise(CPUEM=mean(CPUE)) %>% 
-                  filter(CPUEM<600,
-                         año>1996),
-                aes(año, CPUEM))+
-  geom_point(shape = 16, size = 3, alpha = 0.7)+
-  scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 1))+
-  geom_smooth(method = 'lm', 
-              colour = 'red', 
-              size = 1.5)+
-  # stat_regline_equation(label.x=2007, label.y=500)+
-  # stat_cor(aes(label=..rr.label..), label.x=2007, label.y=450)+
-  #facet_wrap(~zona)+
-  theme_bw()+
-  theme(axis.text.x = element_text(angle = 90, hjust = 2),
-        panel.grid = element_blank())+
-  labs(y="CPUE (kg/dfp)",
-       x="")+
-  ylim(-10, 600)
-cpuen
-  
-```
-guardo los datos  bitacora CPUE nominal 1996-2022
 ```{r}
-cpuenom <- bitb %>% 
+cpuenom <- ggplot(bitb2 %>% 
   group_by(zona, año) %>%
   summarise(CPUEM=mean(CPUE)) %>% 
   filter(CPUEM<600,
-         año>1996)
+         año>1996,
+         zona!=4),
+  aes(año, CPUEM, color=zona, group=zona))+
+    geom_point()+
+  geom_smooth()+
+  scale_color_viridis_b(option="B",
+                        labels = seq(1, 3, by = 1))+
+  scale_x_continuous(breaks = seq(from = 2010, to = 2022, by = 1))+
+  theme_few()+
+  labs(x="",
+       y="CPUE")
+cpuenom
 ```
-```{r}
+
+
+guardo los datos  bitacora CPUE nominal 1996-2022 del objeto `cpuenom`
+
+
+```{r eval=FALSE}
 write_csv(cpuenom, "CPUE_MON.csv")
 ```
 
@@ -534,11 +497,419 @@ Identificar los proncipales factores para modelar la variable.
 
 Luego de una reunión con Seguimiento (Patricio Galvez) se indicaron algunos aspectos que deben ser considerados en la estandariación.
 
-- El poder de pesca  (tipo de embarcación) es mayor en la zona centro sur de Chile. Identificar equilibrio de la base `bit` respecto a este dato.
+- El poder de pesca  (tipo de embarcación) es mayor en la zona centro sur de Chile. Identificar equilibrio de la base `bitb2` respecto a este dato.
 
 - Usar zonas como factor en desmedro de región.
 
 
+Identifico una estadistica descriptiva general de la base de estandarización
+
+
+### Correlaciones 
+
+Análisis de utilidad para identificar a traves de un metodo de corrrelación de pearson, la correlación en tre las variables que serán utilizadas en la estandariacion de la CPUE.
+
+
+Primero identifico las variables a correlacionar
+```{r}
+names(bitb2)
+bitb3 <- bitb2 %>%
+  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 78, 79, 80, 81)
+```
+
+
+```{r}
+results <- correlation(bitb3)
+
+results %>%
+  summary(redundant=TRUE) %>% 
+  plot(results, show_data = "points")+
+  theme_bw()
+```
+
+
+```{r}
+skimr::skim(bitb3)
+```
+
+
+### Datos 0
+
+Are there missing values? y sirve para identificar los factores que se utilzaran en la estandarización.
+
+```{r}
+dim(bitb3)
+colSums(is.na(bitb3))
+```
+Es probable que `HORAS_REPOSO`de la red no podamos usarlo como factor ni como variable de esfuerzo por lo exiguo del dato.
+
+### Variabilidad
+
+```{r}
+asd1<-ggplot(data = bitb3 %>% 
+               filter(zona!=4), 
+             aes(y=dfp, x=zona,
+                 group=zona)) +
+  geom_boxplot()+
+  labs(title = "Variabilidad en DFP",
+       y = "DFP", x = "ZONA") + 
+  facet_wrap(~ año, scales = "free")+
+   theme_few()
+asd1
+```
+
+
+```{r}
+asd2<-ggplot(data =bitb3%>%
+               drop_na(prof_med_cat) %>% 
+               filter(zona!=4), 
+             aes(x=prof_med_cat,
+                 y=lat_ctgr)) +
+  geom_boxplot()+
+  labs(title = "Variabilidad en distribución latitudinal",
+       y = "Latitud", x = "Prof") + 
+  theme_few()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  facet_wrap(~ año)
+asd2
+```
+
+### Normality and Homogenity factors
+
+```{r}
+# Frequency polygon plot for catch
+ggplot(bitb3 %>% 
+         filter(zona!=4),
+         aes(CPUE)) +
+  geom_freqpoly(bins = 8) +
+  labs(x = "Cpue", y = "Frequency") +
+  facet_wrap(.~zona)+
+  theme_few()+
+  theme(panel.border = 
+          element_rect(colour = "black", 
+                       fill=NA, size = 1))
+
+```
+
+Shapiro-Wilk test for deviation from normality
+```{r}
+
+shapiro.test(bitb3$CPUE)
+```
+
+Departure from normality...but not critical
+
+### Colinealidad entre factores
+```{r message=FALSE, warning=FALSE}
+# COLLINEARITY
+Coll <- c(
+          "año",  "dfp" ,"lat_ctgr", "zona" ,
+          "N_PANOS" ,    "CPUE", "prof_med_cat")
+
+# Obtain summary using the ggpairs command from the GGally library
+ggpairs(bitb3[,Coll], ggplot2::aes(alpha = 0.9, colour=prof_med_cat),
+        lower = list(combo = "count"))+
+  scale_fill_manual(values=c("red", "blue", "green",  "black")) +
+   scale_colour_manual(values=c("red", "blue", "green", "black")) +
+  theme_few()
+# Nothing serious
+```
+
+
+```{r message=FALSE, warning=FALSE}
+#Calculate Variance Inflation Factor (VIF)
+vifmodel <- round(vif(lm(PESO_corr ~ zona + dfp + año + mes,
+                     data = bitb3)),2)
+vifmodel
+```
+
+
+```{r message=FALSE, warning=FALSE}
+barplot(vifmodel, main = "VIF Values", horiz = TRUE, col = "steelblue")
+```
+
+La multicolinealidad en el análisis de regresión se produce cuando dos o más variables predictoras están altamente correlacionadas entre sí, de modo que no proporcionan información única o independiente en el modelo de regresión.
+
+Si el grado de correlación es lo suficientemente alto entre las variables, puede causar problemas al ajustar e interpretar el modelo de regresión.
+
+La forma más común de detectar la multicolinealidad es mediante el factor de inflación de varianza (VIF), que mide la correlación y la fuerza de la correlación entre las variables predictoras en un modelo de regresión.
+
+
+
+El valor de VIF comienza en 1 y no tiene límite superior. Una regla general para interpretar VIF es la siguiente:
+
+Un valor de 1 indica que no hay correlación entre una variable predictora dada y cualquier otra variable predictora en el modelo.
+Un valor entre 1 y 5 indica una correlación moderada entre una variable predictora dada y otras variables predictoras en el modelo, pero esto a menudo no es lo suficientemente grave como para requerir atención.
+Un valor superior a 5 indica una correlación potencialmente grave entre una variable predictora dada y otras variables predictoras en el modelo. En este caso, es probable que las estimaciones de coeficientes y los valores p en el resultado de la regresión no sean fiables.
+
+
+### Interaccion
+
+
+```{r}
+# Patterns in the variance? (Evidence for lack of homogeneity)
+ggplot(bitb3, 
+       aes(x = dfp, 
+                  y = (CPUE))) +
+  geom_jitter(shape = 16, 
+              size = 2.5, 
+              alpha = 0.3, 
+              height = 0.25, 
+              width = 0.5) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
+  facet_grid(bitb3$N_TRIPULANTES~bitb3$zona)+
+  theme(panel.background = element_blank()) +
+  theme(panel.border = element_rect(fill = NA, 
+                                    size = 1)) +
+  theme(strip.background = 
+          element_rect(fill = "white",
+                       color = "white",
+                       size = 1)) +
+  theme(text = element_text(size=13)) +
+  theme_few()+
+  xlab("Effort") + 
+  ylab("CPUE") +
+  ggtitle("variabless por Numero de Tripulantes y por zona")
+```
+
+ Year x mes
+```{r message=FALSE}
+ggplot(bitb3, aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
+  theme_few() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(año~trim)
+# No
+```
+
+
+```{r message=FALSE}
+# Year x habitat
+ggplot(bitb3, aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
+  theme_few() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(zona~prof_med_cat)
+# Perhaps
+```
+
+
+```{r message=FALSE}
+# Zona
+ggplot(bitb3, aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
+  theme_few() +
+  xlab("dfp") + ylab("Catch") +
+  facet_grid(año~trim)
+  facet_grid(~zona)
+# CPUE slope varies between habitats - interaction
+```
+
+
+```{r message=FALSE}
+# Tipo carnada zona
+ggplot(bitb3,  aes(x = dfp, y = (PESO_corr))) +
+  geom_point(shape = 16, size = 3, alpha = 0.7) +
+  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
+  theme_few()+
+  xlab("Points") + ylab("Catch") +
+  facet_grid(TIPO_CARNADA~zona)
+# Perhaps
+```
+
+
+### Genero categorias y Factorizo
+
+
+```{r}
+bitb3 <- bitb3 %>%
+  mutate(POTENCIA_CAT = cut(POTENCIA_MOTOR_EQ, 
+                            breaks = c(0, 200, 300, 400, 1000),
+                      labels = c("Bajo", "Medio-Bajo", "Medio-Alto", "Alto")),
+         LAT_CAT = cut(lat_ctgr, 
+                              breaks = c(-20, -35, -40, -47),
+                      labels = c("Norte", "Centro", "Sur")),
+         N_TRIPULANTES=factor(N_TRIPULANTES),
+         año=factor(año),
+         zona=factor(zona),
+         trim=factor(trim)) %>% 
+  drop_na(zona,
+          LAT_CAT,
+          prof_med_cat,
+          POTENCIA_CAT) %>%
+  filter(CPUE>0) %>% 
+  mutate(logCPUE=log(CPUE))
+
+glimpse(bitb3)
+  
+```
+
+ The data exploration showed:
+   
+1.	One significant outlier in catch
+2.  Deviation from normality in response variable
+3.	Possible departure from homogeneity
+4.	Few zeros in the response variable
+5.	No collinearity
+6.  No imbalance
+7.  Possible season x habitat interaction
+
+### Chequeo distribuciones
+
+```{r}
+
+bcpue <- ggplot(bitb3,
+                aes(CPUE))+
+  coord_flip()+
+  geom_boxplot()+
+  theme_few()
+
+
+hcpue <- ggplot(bitb3,
+                aes(CPUE))+
+  geom_histogram(bins=15, fill=2)+
+  theme_few()
+
+
+ggarrange(bcpue, hcpue, ncol = 2)  
+```
+
+
+
+```{r}
+
+blcpue <- ggplot(bitb3,
+                aes(logCPUE))+
+  coord_flip()+
+  geom_boxplot()+
+  theme_few()
+
+
+hlcpue <- ggplot(bitb3,
+                aes(logCPUE))+
+  geom_histogram(bins=15, fill=2)+
+  theme_few()
+
+
+ggarrange(blcpue, hlcpue, ncol = 2)  
+```
+
+
+```{r}
+#Chequeo visual de normalidad y dispersion
+#-------------------------------------------------------------------------------
+#CPUE y LOGCPUE
+par(mfrow=c(2,2))
+
+qqnorm(bitb3$CPUE)   
+qqline(bitb3$CPUE,col='red') #
+boxplot(CPUE ~ año,data=bitb3,na.rm=T,#
+        main="Boxplot nominal CPUE by year", ylab="CPUE",col='light grey',boxwex=0.65)
+
+qqnorm(bitb3$logCPUE)   
+qqline(bitb3$logCPUE,col='red') #
+boxplot(logCPUE ~ año,data=bitb3,na.rm=T,#
+        main="Boxplot nominal LogCPUE by year", ylab="LogCPUE",col='light grey',boxwex=0.65)
+
+```
+
+
+
+### Modelos GLM
+
+
+
+```{r}
+#Predictores (Factores Principales)
+gauss01 = glm(formula= logCPUE ~  año,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss02 = glm(formula= logCPUE ~  año+trim,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss03 = glm(formula= logCPUE ~  año+trim+prof_med_cat,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss04 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss05 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss06 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+TIPO_CARNADA,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss07 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+gauss08 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona:prof_med_cat,
+              family = gaussian(link="identity"), 
+              data = bitb3,na.action=na.exclude)
+```
+
+
+```{r eval=FALSE}
+rmodelo01 = c(AIC(gauss01),(gauss01$null.deviance-gauss01$deviance)/gauss01$null.deviance)
+rmodelo02 = c(AIC(gauss02),(gauss02$null.deviance-gauss02$deviance)/gauss02$null.deviance)
+rmodelo03 = c(AIC(gauss03),(gauss03$null.deviance-gauss03$deviance)/gauss03$null.deviance)
+rmodelo04 = c(AIC(gauss04),(gauss04$null.deviance-gauss04$deviance)/gauss04$null.deviance)
+rmodelo05 = c(AIC(gauss05),(gauss05$null.deviance-gauss05$deviance)/gauss05$null.deviance)
+rmodelo06 = c(AIC(gauss06),(gauss06$null.deviance-gauss06$deviance)/gauss06$null.deviance)
+rmodelo07 = c(AIC(gauss07),(gauss07$null.deviance-gauss07$deviance)/gauss07$null.deviance)
+rmodelo08 = c(AIC(gauss08),(gauss08$null.deviance-gauss08$deviance)/gauss08$null.deviance)
+resultados = rbind(rmodelo01,rmodelo02,rmodelo03,rmodelo04,rmodelo05,rmodelo06,
+                   rmodelo07,rmodelo08);resultados
+```
+
+
+```{r}
+check_model(gauss07)
+```
+
+
+Table with significance level (***).
+```{r eval=FALSE}
+
+tab_model(gauss01, 
+          gauss02,
+          gauss03, 
+          gauss04,
+          gauss05,
+          gauss06,
+          gauss07,
+          gauss08,
+          p.style = "stars")
+
+```
+
+```{r}
+model_performance(gauss07)
+```
+
+Table comparing performance model. 
+```{r warning=F}
+compare_performance(gauss01, 
+          gauss02,
+          gauss03, 
+          gauss04,
+          gauss05,
+          gauss06,
+          gauss07,
+          gauss08,
+          rank = TRUE, 
+          verbose = FALSE)
+```
+
+Regarding this result, we can select **best model** and check some assumtion like:
+
+- Colinealidad
+- Data points influyentes
+- Homoscedasticidad
+- Normalidad de los residuos 
+- Independencia
 
 ## COMPOSICIONES DE TALLAS
 
@@ -551,6 +922,7 @@ Primero identificamos la estructura de la base;
 
 ```{r}
 glimpse(long)
+colSums(is.na(long))
 ```
 Primero selecciono las columnas de interes y luego genero la expansión de `LONGITUD_MUESTRA` a `N_INDIVIDUOS`. Expand frecuency data related length, in this case `N_INDIVIDUOS` column have frecuency that we need expand to whole data frame. 
 
