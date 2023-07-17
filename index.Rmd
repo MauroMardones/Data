@@ -173,7 +173,7 @@ desem <- ggplot(landing2 %>%
                    drop_na(REGION),aes(AÑO, CAPTURA, fill=REGION)) +
   geom_bar(stat="identity")+
   scale_fill_viridis_d(option="G")+
-  theme_minimal()+
+  theme_few()+
   scale_x_continuous(breaks = seq(from = 1985, to = 2022, by = 4))+
   scale_y_continuous(breaks = seq(from = 0, to = 4000, by = 1000))+
   theme(axis.text.x = element_text(angle = 90, hjust = 2),
@@ -398,7 +398,8 @@ ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
   geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
   theme_bw() +
   xlab("dfp") + ylab("Catch") +
-  facet_grid(año~N_TRIPULANTES)
+  facet_grid(año~N_TRIPULANTES)+
+  theme_few()
 # Perhaps
 ```
 
@@ -410,7 +411,8 @@ ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
   geom_smooth(method = 'lm', colour = 'red', se = FALSE) +
   theme_bw() +
   xlab("dfp") + ylab("Catch") +
-  facet_grid(trim~N_TRIPULANTES)
+  facet_grid(trim~N_TRIPULANTES)+
+  theme_few()
 # CPUE slope varies between habitats - interaction
 ```
 
@@ -420,7 +422,7 @@ Profundidad por region
 ```{r}
 profu <- ggplot(bitb2, aes(REGION_PUERTO_RECALADA, desc(prof_med), 
                             group=REGION_PUERTO_RECALADA))+
-  geom_boxplot(fill=2, alpha=.5)+
+  geom_boxplot(fill=NA, alpha=.5)+
   geom_jitter(size=0.4, alpha=0.2,
               width = .25)+
   #facet_wrap(~año)+
@@ -431,6 +433,17 @@ profu <- ggplot(bitb2, aes(REGION_PUERTO_RECALADA, desc(prof_med),
 profu
 ```
 
+Comparo las medias  de la profundidad
+
+```{r}
+# Prueba de Kruskal-Wallis
+pairwise.t.test(x = bitb2$prof_med, 
+                g = bitb2$REGION_PUERTO_RECALADA, 
+                p.adjust.method = "holm",
+                pool.sd = TRUE, 
+                paired = FALSE, 
+                alternative = "two.sided")
+```
 
 ```{r}
 ggplot(bitb2, aes(x = nombre_puerto_recalada , y = dfp, fill = nombre_puerto_recalada )) +
@@ -441,7 +454,7 @@ ggplot(bitb2, aes(x = nombre_puerto_recalada , y = dfp, fill = nombre_puerto_rec
 ggplot(bitb2, aes(x = as.factor(REGION_PUERTO_RECALADA ), 
                   y = bitb2$NUMERO_DE_ANZUELOS, 
                   fill = as.factor(REGION_PUERTO_RECALADA))) +
-  geom_violin() +
+  geom_violin(scale="width") +
   theme_modern() +
   scale_fill_material_d(palette="ice",
                         name="REGION")
@@ -514,7 +527,7 @@ Primero identifico las variables a correlacionar
 ```{r}
 names(bitb2)
 bitb3 <- bitb2 %>%
-  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 78, 79, 80, 81)
+  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 78, 79, 80)
 ```
 
 
@@ -559,15 +572,13 @@ asd1
 ```
 
 
-```{r}
-asd2<-ggplot(data =bitb3%>%
-               drop_na(prof_med_cat) %>% 
-               filter(zona!=4), 
-             aes(x=prof_med_cat,
-                 y=lat_ctgr)) +
+```{r eval=FALSE}
+asd2<-ggplot(data =bitb3, 
+             aes(x=LAT_CAT,
+                 y=CPUE)) +
   geom_boxplot()+
   labs(title = "Variabilidad en distribución latitudinal",
-       y = "Latitud", x = "Prof") + 
+       y = "CPUE", x = "Zona") + 
   theme_few()+
   theme(axis.text.x = element_text(angle = 90, hjust = 1))+
   facet_wrap(~ año)
@@ -740,7 +751,7 @@ bitb3 <- bitb3 %>%
           LAT_CAT,
           prof_med_cat,
           POTENCIA_CAT) %>%
-  filter(CPUE>0) %>% 
+  filter(CPUE<600) %>% 
   mutate(logCPUE=log(CPUE))
 
 glimpse(bitb3)
@@ -762,26 +773,36 @@ glimpse(bitb3)
 ```{r}
 
 bcpue <- ggplot(bitb3,
-                aes(CPUE))+
+                aes(CPUE, group=año))+
   coord_flip()+
   geom_boxplot()+
   theme_few()
 
 
-hcpue <- ggplot(bitb3,
+hcpue <- ggplot(bitb3 ,
                 aes(CPUE))+
   geom_histogram(bins=15, fill=2)+
   theme_few()
 
 
 ggarrange(bcpue, hcpue, ncol = 2)  
+descdist(bitb3$CPUE, boot = 200)
 ```
+Gamma distribution es la mas adecuada para la variable y que tiene la forma de :
 
+$$
+f(x, u, \sigma) = \frac{1}{\sqrt{2hr}}e^{\frac{1(x-u)^2}{\sigma^2}}
+$$
 
+Donde; 
+$$
+x \in R 
+$$
 
 ```{r}
 
-blcpue <- ggplot(bitb3,
+blcpue <- ggplot(bitb3 %>% 
+                   filter>0,
                 aes(logCPUE))+
   coord_flip()+
   geom_boxplot()+
@@ -796,27 +817,7 @@ hlcpue <- ggplot(bitb3,
 
 ggarrange(blcpue, hlcpue, ncol = 2)  
 ```
-
-
-```{r}
-#Chequeo visual de normalidad y dispersion
-#-------------------------------------------------------------------------------
-#CPUE y LOGCPUE
-par(mfrow=c(2,2))
-
-qqnorm(bitb3$CPUE)   
-qqline(bitb3$CPUE,col='red') #
-boxplot(CPUE ~ año,data=bitb3,na.rm=T,#
-        main="Boxplot nominal CPUE by year", ylab="CPUE",col='light grey',boxwex=0.65)
-
-qqnorm(bitb3$logCPUE)   
-qqline(bitb3$logCPUE,col='red') #
-boxplot(logCPUE ~ año,data=bitb3,na.rm=T,#
-        main="Boxplot nominal LogCPUE by year", ylab="LogCPUE",col='light grey',boxwex=0.65)
-
-```
-
-
+En la transformación de la dsata se comprueba la inconcistencia del uso de datos de la variable `CPUE` transformada
 
 ### Modelos GLM
 
@@ -824,84 +825,121 @@ boxplot(logCPUE ~ año,data=bitb3,na.rm=T,#
 
 ```{r}
 #Predictores (Factores Principales)
-gauss01 = glm(formula= logCPUE ~  año,
-              family = gaussian(link="identity"), 
+M01 = glm(formula= CPUE ~  año,
+              family = Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss02 = glm(formula= logCPUE ~  año+trim,
-              family = gaussian(link="identity"), 
+M02 = glm(formula= CPUE ~  año+trim,
+              family = Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss03 = glm(formula= logCPUE ~  año+trim+prof_med_cat,
-              family = gaussian(link="identity"), 
+M03 = glm(formula= CPUE ~  año+trim+prof_med_cat,
+              family =  Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss04 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES,
-              family = gaussian(link="identity"), 
+M04 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES,
+              family = Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss05 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT,
-              family = gaussian(link="identity"), 
+M05 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT,
+              family =  Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss06 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+TIPO_CARNADA,
-              family = gaussian(link="identity"), 
+M06 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+TIPO_CARNADA,
+              family =  Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss07 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona,
-              family = gaussian(link="identity"), 
+M07 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona,
+              family =  Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
-gauss08 = glm(formula= logCPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona:prof_med_cat,
-              family = gaussian(link="identity"), 
+M08 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona:prof_med_cat,
+              family = Gamma(link = "inverse"), 
               data = bitb3,na.action=na.exclude)
 ```
 
 
 ```{r eval=FALSE}
-rmodelo01 = c(AIC(gauss01),(gauss01$null.deviance-gauss01$deviance)/gauss01$null.deviance)
-rmodelo02 = c(AIC(gauss02),(gauss02$null.deviance-gauss02$deviance)/gauss02$null.deviance)
-rmodelo03 = c(AIC(gauss03),(gauss03$null.deviance-gauss03$deviance)/gauss03$null.deviance)
-rmodelo04 = c(AIC(gauss04),(gauss04$null.deviance-gauss04$deviance)/gauss04$null.deviance)
-rmodelo05 = c(AIC(gauss05),(gauss05$null.deviance-gauss05$deviance)/gauss05$null.deviance)
-rmodelo06 = c(AIC(gauss06),(gauss06$null.deviance-gauss06$deviance)/gauss06$null.deviance)
-rmodelo07 = c(AIC(gauss07),(gauss07$null.deviance-gauss07$deviance)/gauss07$null.deviance)
-rmodelo08 = c(AIC(gauss08),(gauss08$null.deviance-gauss08$deviance)/gauss08$null.deviance)
-resultados = rbind(rmodelo01,rmodelo02,rmodelo03,rmodelo04,rmodelo05,rmodelo06,
-                   rmodelo07,rmodelo08);resultados
+rmodelo01 <- c(AIC(M01),(M01$null.deviance-M01$deviance)/M01$null.deviance)
+rmodelo02 <- c(AIC(M02),(M02$null.deviance-M02$deviance)/M02$null.deviance)
+rmodelo03 <- c(AIC(M03),(M03$null.deviance-M03$deviance)/M03$null.deviance)
+rmodelo04 <- c(AIC(M04),(M04$null.deviance-M04$deviance)/M04$null.deviance)
+rmodelo05 <- c(AIC(M05),(M05$null.deviance-M05$deviance)/M05$null.deviance)
+rmodelo06 <- c(AIC(M06),(M06$null.deviance-M06$deviance)/M06$null.deviance)
+rmodelo07 <- c(AIC(M07),(M07$null.deviance-M07$deviance)/M07$null.deviance)
+rmodelo08 <- c(AIC(M08),(M08$null.deviance-M08$deviance)/M08$null.deviance)
+
+resultados <- as.data.frame(rbind(rmodelo01,rmodelo02,rmodelo03,rmodelo04,rmodelo05,rmodelo06,
+                   rmodelo07,rmodelo08))
+
+resultados <- resultados %>% 
+  rename("AIC"=V1,
+         "Deviance"=V2)
+
+kbl(resultados, booktabs = T,format = "html",
+    caption = "Parámetros de los modelos estimados") %>%
+    kable_styling(latex_options = c("striped",
+                                  "condensed","scale_down"),
+                full_width = FALSE) 
+
 ```
 
 
-```{r}
-check_model(gauss07)
+```{r eval=FALSE}
+par(mfrow=c(2,3))
+termplot(M07, se = TRUE)
+
+```
+Seleccion del modelo final `M06`
+
+```{r fig.width=4}
+check_model(M06)
 ```
 
 
 Table with significance level (***).
-```{r eval=FALSE}
+```{r}
 
-tab_model(gauss01, 
-          gauss02,
-          gauss03, 
-          gauss04,
-          gauss05,
-          gauss06,
-          gauss07,
-          gauss08,
+tab_model(M01, 
+          M02,
+          M03, 
+          M04,
+          M05,
+          M06,
+          M07,
+          M08,
           p.style = "stars")
 
 ```
 
-```{r}
-model_performance(gauss07)
-```
 
 Table comparing performance model. 
 ```{r warning=F}
-compare_performance(gauss01, 
-          gauss02,
-          gauss03, 
-          gauss04,
-          gauss05,
-          gauss06,
-          gauss07,
-          gauss08,
+compare_performance(M01, 
+          M02,
+          M03, 
+          M04,
+          M05,
+          M06,
+          M07,
+          M08,
           rank = TRUE, 
           verbose = FALSE)
 ```
+Plot comparing performance model. 
+```{r warning=F}
+plot(compare_performance(M01, 
+          M02,
+          M03, 
+          M04,
+          M05,
+          M06,
+          M07,
+          M08,
+          rank = TRUE, 
+          verbose = FALSE))
+```
+
+
+
+```{r}
+model_performance(M06)
+```
+
+
 
 Regarding this result, we can select **best model** and check some assumtion like:
 
@@ -947,19 +985,20 @@ dim(long2)
 ```{r warning=FALSE, message=F}
 
 legend.labels <- c('Indet.', 'Macho' , 'Hembra')
-nbco <- ggplot(long2, aes(x=LONGITUD_MUESTRA, y = as.factor(año),
+nbco <- ggplot(long2 %>% 
+                 filter(REGION!=12), aes(x=LONGITUD_MUESTRA, y = as.factor(año),
                          fill=as.factor(SEXO)))+
   geom_density_ridges(stat = "density_ridges", bins = 20, 
                       scale = 2, draw_baseline = FALSE,
                       alpha=0.5)+
-  facet_wrap(.~REGION, ncol=5) +
+  facet_wrap(.~REGION, ncol=4) +
   geom_vline(xintercept = 110, color = "red")+
-  scale_fill_viridis_d(option = "C",
+  scale_fill_viridis_d(option = "G",
                        name="SEXO",
                        labels=legend.labels)+
   scale_y_discrete(breaks = seq(from = 2004, to = 2022, by = 2))+
   theme(axis.text.x = element_text(angle = 90, hjust = 1))+
-  theme_minimal()+
+  theme_few()+
   xlab("Longitud (cm.)")+
   ylab("")
 #scale_x_discrete((limits = rev(levels(talla2021$ANO_ARR))))+
