@@ -1,5 +1,5 @@
 ---
-title: "Análisis espacio-temporal datos histórica artesanal de la pesquería de Bacalao"
+title: "Informe autocontenido Análisis Exploratorio de Datos Monitoreo de la pesquería Bacalao de profundidad APA"
 subtitle: "Analisis exploratorio 1986-2021"
 author: "Mauricio Mardones I"
 date:  "`r format(Sys.time(), '%d %B, %Y')`"
@@ -65,6 +65,7 @@ library(easystats) # multiples unciones analiticas
 library(lme4)
 library(skimr)
 library(readxl)
+library(fitdistrplus)
 # vizualizacion
 library(ggridges)
 library(sf)
@@ -77,6 +78,7 @@ library(egg)
 library(car) #Variance inflation Factor
 library(ggthemes)
 library(sjPlot)
+library(GGally)
 ```
 
 
@@ -170,17 +172,18 @@ landing2$REGION <- factor(landing2$REGION ,
                "VALPO" ,"LGBO" , "MAULE", "ÑUBLE", "BBIO" , "ARAUC",
                "RIOS" , "LAGOS", "AYSEN", "MAG"))
 desem <- ggplot(landing2 %>% 
+                  filter(REGION != "MAG") %>% 
                    drop_na(REGION),aes(AÑO, CAPTURA, fill=REGION)) +
   geom_bar(stat="identity")+
   scale_fill_viridis_d(option="G")+
   theme_few()+
-  scale_x_continuous(breaks = seq(from = 1985, to = 2022, by = 4))+
+  scale_x_continuous(breaks = seq(from = 1985, to = 2022, by = 5))+
   scale_y_continuous(breaks = seq(from = 0, to = 4000, by = 1000))+
   theme(axis.text.x = element_text(angle = 90, hjust = 2),
         panel.grid = element_blank(),
         legend.position = "none")+
-  facet_wrap(~REGION, ncol=3)+
-  labs(y="Captura (t)",
+  facet_wrap(~REGION, ncol=7)+
+  labs(y="Desembarques Oficiales (t)",
        x="")
 desem
 
@@ -273,7 +276,7 @@ Identifico las dimensionesd e la nueva base y la comparo con la anterior
 ```{r}
 dim(bitb2)
 dim(bitb)
-table(bitb2$año)
+table(bitb$año)
 ```
 
 Los registros se minimiza en ciertos años lo cual genera problemas en la fiabilidad de la estimación.
@@ -299,12 +302,14 @@ bitb2$prof_med_cat <- cut(bitb2$prof_med,
 
 ```{r}
 # Frequency polygon plot for catch
-his <- ggplot(bitb2, aes(dfp)) +
+his <- ggplot(bitb2, aes(CPUE)) +
   geom_freqpoly(bins = 5) +
   labs(x = "dfp", y = "Frequency") +
   theme_bw() +
   theme(panel.border = element_rect(colour = "black", 
-                                    fill=NA, size = 1))
+                                    fill=NA, size = 1))+
+  facet_wrap(~año)+
+  theme_few()
 # Patterns in the variance? (any lack of homogeneity)
 point <- ggplot(bitb2 %>% 
                   filter(PESO_corr>1000), aes(x = dfp, y = (PESO_corr))) +
@@ -326,10 +331,10 @@ Tendencia del esfuerzo `dfp` a través de los años y por región
 ```{r warning =FALSE}
 effor <- ggplot(bitb2 %>%
                   group_by(año, REGION_PUERTO_RECALADA) %>% 
-                  summarise(DFPM=mean(dfp)),
+                  summarise(DFPM=mean(CPUE)),
                 aes(año, DFPM))+
   geom_point(shape = 16, size = 3, alpha = 0.7)+
-  scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 1))+
+  scale_x_continuous(breaks = seq(from = 1995, to = 2022, by = 3))+
   geom_smooth(method = 'lm', 
               colour = 'blue', 
               size = 1.5)+
@@ -338,8 +343,15 @@ effor <- ggplot(bitb2 %>%
   theme(axis.text.x = element_text(angle = 90, hjust = 2),
         panel.grid = element_blank())+
   labs(y="Effort (dfp)",
-       x="")
+       x="")+
+  ylim(5,500)
 effor
+```
+```{r eval=FALSE}
+efformean <- bitb %>% 
+  group_by(año) %>% 
+  summarise(dfpmean= mean(dfp))
+write.table(efformean, "dfptable.txt")
 ```
 
 Tendencia del esfuerzo `NUMERO_DE_ANZUELOS` a través de los años y por región
@@ -420,14 +432,15 @@ ggplot(bitb2, aes(x = dfp, y = (PESO_corr))) +
 Profundidad por region
 
 ```{r}
-profu <- ggplot(bitb2, aes(REGION_PUERTO_RECALADA, desc(prof_med), 
-                            group=REGION_PUERTO_RECALADA))+
+profu <- ggplot(bitb2, aes(año, desc(prof_med), 
+                            group=año))+
   geom_boxplot(fill=NA, alpha=.5)+
   geom_jitter(size=0.4, alpha=0.2,
               width = .25)+
-  #facet_wrap(~año)+
-  theme_bw()+
-  scale_x_continuous(breaks = seq(from = 1, to = 15, by = 1))+
+  facet_wrap(~REGION_PUERTO_RECALADA, ncol=5)+
+  theme_few()+
+  scale_x_continuous(breaks = seq(from = 2011, to = 2022, by = 3))+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
   labs(x="Región",
        y="Profundidad (mts)")
 profu
@@ -446,7 +459,10 @@ pairwise.t.test(x = bitb2$prof_med,
 ```
 
 ```{r}
-ggplot(bitb2, aes(x = nombre_puerto_recalada , y = dfp, fill = nombre_puerto_recalada )) +
+ggplot(bitb2, 
+       aes(x = nombre_puerto_recalada , 
+           y = dfp, 
+           fill = nombre_puerto_recalada )) +
   geom_violindot(fill_dots = "black") +
   theme_modern() +
   scale_fill_material_d()
@@ -487,8 +503,7 @@ cpuenom <- ggplot(bitb2 %>%
   aes(año, CPUEM, color=zona, group=zona))+
     geom_point()+
   geom_smooth()+
-  scale_color_viridis_b(option="B",
-                        labels = seq(1, 3, by = 1))+
+  scale_color_viridis_b(option="B")+
   scale_x_continuous(breaks = seq(from = 2010, to = 2022, by = 1))+
   theme_few()+
   labs(x="",
@@ -527,7 +542,8 @@ Primero identifico las variables a correlacionar
 ```{r}
 names(bitb2)
 bitb3 <- bitb2 %>%
-  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 78, 79, 80)
+  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 78, 79, 80, 81)
+names(bitb3)
 ```
 
 
@@ -611,14 +627,13 @@ shapiro.test(bitb3$CPUE)
 Departure from normality...but not critical
 
 ### Colinealidad entre factores
-```{r message=FALSE, warning=FALSE}
+```{r eval= FALSE, message=FALSE, warning=FALSE}
 # COLLINEARITY
-Coll <- c(
-          "año",  "dfp" ,"lat_ctgr", "zona" ,
+Coll <- c("año",  "dfp" ,"lat_ctgr", "zona" ,
           "N_PANOS" ,    "CPUE", "prof_med_cat")
 
 # Obtain summary using the ggpairs command from the GGally library
-ggpairs(bitb3[,Coll], ggplot2::aes(alpha = 0.9, colour=prof_med_cat),
+ggpairs(bitb3[,Coll], ggplot2::aes(alpha = 0.9, colour=zona),
         lower = list(combo = "count"))+
   scale_fill_manual(values=c("red", "blue", "green",  "black")) +
    scale_colour_manual(values=c("red", "blue", "green", "black")) +
@@ -695,16 +710,6 @@ ggplot(bitb3, aes(x = dfp, y = (PESO_corr))) +
 ```
 
 
-```{r message=FALSE}
-# Year x habitat
-ggplot(bitb3, aes(x = dfp, y = (PESO_corr))) +
-  geom_point(shape = 16, size = 3, alpha = 0.7) +
-  geom_smooth(method = 'lm', colour = 'red', se = FALSE, size = 1.5) +
-  theme_few() +
-  xlab("dfp") + ylab("Catch") +
-  facet_grid(zona~prof_med_cat)
-# Perhaps
-```
 
 
 ```{r message=FALSE}
@@ -758,6 +763,7 @@ glimpse(bitb3)
   
 ```
 
+
  The data exploration showed:
    
 1.	One significant outlier in catch
@@ -771,7 +777,6 @@ glimpse(bitb3)
 ### Chequeo distribuciones
 
 ```{r}
-
 bcpue <- ggplot(bitb3,
                 aes(CPUE, group=año))+
   coord_flip()+
@@ -784,9 +789,13 @@ hcpue <- ggplot(bitb3 ,
   geom_histogram(bins=15, fill=2)+
   theme_few()
 
+ggarrange(bcpue, hcpue, ncol = 2)
 
-ggarrange(bcpue, hcpue, ncol = 2)  
-descdist(bitb3$CPUE, boot = 200)
+```
+
+Grafico para comprobar distribución `Gamma`
+```{r}
+dist <- descdist(bitb3$CPUE, boot = 200)
 ```
 Gamma distribution es la mas adecuada para la variable y que tiene la forma de :
 
@@ -799,24 +808,6 @@ $$
 x \in R 
 $$
 
-```{r}
-
-blcpue <- ggplot(bitb3 %>% 
-                   filter>0,
-                aes(logCPUE))+
-  coord_flip()+
-  geom_boxplot()+
-  theme_few()
-
-
-hlcpue <- ggplot(bitb3,
-                aes(logCPUE))+
-  geom_histogram(bins=15, fill=2)+
-  theme_few()
-
-
-ggarrange(blcpue, hlcpue, ncol = 2)  
-```
 En la transformación de la dsata se comprueba la inconcistencia del uso de datos de la variable `CPUE` transformada
 
 ### Modelos GLM
@@ -825,31 +816,32 @@ En la transformación de la dsata se comprueba la inconcistencia del uso de dato
 
 ```{r}
 #Predictores (Factores Principales)
-M01 = glm(formula= CPUE ~  año,
-              family = Gamma(link = "inverse"), 
+M01 = glm(formula = CPUE ~  año,
+              family = gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M02 = glm(formula= CPUE ~  año+trim,
-              family = Gamma(link = "inverse"), 
+              family = gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M03 = glm(formula= CPUE ~  año+trim+prof_med_cat,
-              family =  Gamma(link = "inverse"), 
+              family =  gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M04 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES,
-              family = Gamma(link = "inverse"), 
+              family = gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M05 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT,
-              family =  Gamma(link = "inverse"), 
+              family =  gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M06 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+TIPO_CARNADA,
-              family =  Gamma(link = "inverse"), 
+              family =  gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M07 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona,
-              family =  Gamma(link = "inverse"), 
+              family =  gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 M08 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona:prof_med_cat,
-              family = Gamma(link = "inverse"), 
+              family = gaussian(link = "identity"), 
               data = bitb3,na.action=na.exclude)
 ```
+
 
 
 ```{r eval=FALSE}
@@ -861,7 +853,10 @@ rmodelo05 <- c(AIC(M05),(M05$null.deviance-M05$deviance)/M05$null.deviance)
 rmodelo06 <- c(AIC(M06),(M06$null.deviance-M06$deviance)/M06$null.deviance)
 rmodelo07 <- c(AIC(M07),(M07$null.deviance-M07$deviance)/M07$null.deviance)
 rmodelo08 <- c(AIC(M08),(M08$null.deviance-M08$deviance)/M08$null.deviance)
+```
 
+
+```{r eval=FALSE}
 resultados <- as.data.frame(rbind(rmodelo01,rmodelo02,rmodelo03,rmodelo04,rmodelo05,rmodelo06,
                    rmodelo07,rmodelo08))
 
@@ -877,22 +872,27 @@ kbl(resultados, booktabs = T,format = "html",
 
 ```
 
-
 ```{r eval=FALSE}
-par(mfrow=c(2,3))
-termplot(M07, se = TRUE)
-
+predict.3    <- predict(M07,se.fit=T)
+predict.mean3 <-exp(predict.3$fit)
+predict.var3  <-predict.mean3^2*predict.3$se.fit^2
+predict.sd3   <-sqrt(predict.var3)
+predict.cv3   <-predict.sd3/predict.mean3
+predict.linf3 <-predict.mean3-1.96*predict.sd3
+predict.lsup3 <-predict.mean3+1.96*predict.sd3
+hist(exp(predM06$fit))
 ```
+
+
 Seleccion del modelo final `M06`
 
 ```{r fig.width=4}
-check_model(M06)
+check_model(M07)
 ```
 
 
 Table with significance level (***).
 ```{r}
-
 tab_model(M01, 
           M02,
           M03, 
@@ -920,7 +920,7 @@ compare_performance(M01,
           verbose = FALSE)
 ```
 Plot comparing performance model. 
-```{r warning=F}
+```{r eval=FALSE, warning=F}
 plot(compare_performance(M01, 
           M02,
           M03, 
@@ -939,6 +939,37 @@ plot(compare_performance(M01,
 model_performance(M06)
 ```
 
+```{r}
+res_glm<-as.numeric(M06$residuals)
+
+res_hist<-ggplot(as.data.frame(res_glm), aes(x=res_glm)) +
+  geom_histogram(position="identity", bins = 20)+
+  theme_bw()+
+  xlab("Residuos")+
+  ylab("Frecuencia")
+#res_qqnorm<-qqnorm(res_glm)+
+ # qqline(res_glm) 
+
+res_density<-ggdensity(res_glm, res_glm = "", fill = "lightgray", 
+                                title = "") +
+  scale_x_continuous() +
+  stat_overlay_normal_density(color = "red", linetype = "dashed")+
+  xlab("Residuos")+
+  ylab("Densidad")
+res_points<-ggplot(as.data.frame(res_glm), 
+                            aes(y=res_glm, x=(1:length(res_glm)))) +
+  geom_point()+
+  xlab("")+
+  ylab("Residuos")+
+  theme_few()
+ggarrange(res_hist,  res_density, res_points,
+          labels = c("A", "B", "C"),
+          ncol = 3)
+```
+
+```{r eval=FALSE}
+output<-M01$fitted.values
+```
 
 
 Regarding this result, we can select **best model** and check some assumtion like:
@@ -970,6 +1001,7 @@ Selecciono variables de interes
 long1 <- long %>% 
   dplyr::select(6,8,11,12,21,22,23,24)
 dim(long1)
+
 ```
 
 
@@ -980,6 +1012,7 @@ long2 <- long %>%
   uncount(N_INDIVIDUOS)
 
 dim(long2)
+table(long2$REGION)
 ```
 
 ```{r warning=FALSE, message=F}
@@ -1016,14 +1049,103 @@ long2$LONG_CAT <- as.numeric(as.character(cut(x = long2$LONGITUD_MUESTRA,
                                               labels = seq(10,218,2),
                                               right = FALSE)))
 LONGT <- table(long2$año, long2$LONG_CAT)
-LONGT
+# guardar en un .xls
 ```
 
 
-```{r eval=FALSE}
-write.csv()
+## BIOLOGICO
+
+```{r}
+names(bio)
+table(bio$COD_ESPECIE)
 ```
 
+Filtro ciertos datos para estimar coeficientes
+
+```{r}
+bio2 <- bio %>% 
+  drop_na(PESO_ESPECIMEN,
+          LONGITUD_ESPECIMEN,
+          SEXO_ESPECIMEN) %>% 
+  filter(PESO_ESPECIMEN>100,
+         año>2005)
+  
+```
+
+
+
+Ahora por sexo
+
+```{r warning=F}
+legend.label <- c('Macho' , 'Hembra')
+my.plotsex<- ggplot(bio2 %>% 
+                      filter(SEXO_ESPECIMEN!="0",
+                             SEXO_ESPECIMEN!="3",
+                             SEXO_ESPECIMEN!="6"), 
+                  aes(y=PESO_ESPECIMEN, x=LONGITUD_ESPECIMEN, 
+                      colour=SEXO_ESPECIMEN)) +
+  geom_point(alpha=.1) + 
+  scale_colour_manual(values = c("black", "red"),
+                        name="Sexo",
+                      labels=legend.label)+
+  facet_wrap(~ año, ncol = 4) + 
+  geom_smooth(method = "loess", 
+              se=TRUE,  
+              formula = y ~ x, 
+              size=0.3,
+              span=5)+
+  theme_few()+
+  theme(legend.position = "bottom")+
+  labs(y="Peso (gr.)",
+       x="Longitud (cm)")
+my.plotsex
+```
+Ahora por región
+```{r warning=F}
+legend.label <- c('Macho' , 'Hembra')
+my.plotreg<- ggplot(bio2 %>% 
+                      drop_na(REGION) %>% 
+                      filter(SEXO_ESPECIMEN!="0",
+                             SEXO_ESPECIMEN!="3",
+                             SEXO_ESPECIMEN!="6",
+                             REGION!=12), 
+                  aes(y=PESO_ESPECIMEN, x=LONGITUD_ESPECIMEN, 
+                      colour=SEXO_ESPECIMEN)) +
+  geom_point(alpha=.1) + 
+  scale_colour_manual(values = c("black", "red"),
+                        name="Sexo",
+                      labels=legend.label)+
+  facet_wrap(~ REGION, ncol = 4) + 
+  geom_smooth(method = "loess", 
+              se=TRUE,  
+              formula = y ~ x, 
+              size=0.3,
+              span=5)+
+  theme_few()+
+  theme(legend.position = "bottom")+
+  labs(y="Peso (gr.)",
+       x="Longitud (cm)")
+my.plotreg
+```
+
+
+Extraigo coeficientes globales
+
+```{r}
+x<-log(bio2$LONGITUD_ESPECIMEN)
+y<-log(bio2$PESO_ESPECIMEN)
+reg.l<-lm(y~x)
+summary(reg.l)
+anova(reg.l)
+
+res <- residuals(reg.l)
+```
+
+
+```{r}
+plot(res)
+abline(h = 0, col = "red", lty=2)
+```
 
 ## BITACORA FIPA 96- 14
 
@@ -1055,7 +1177,7 @@ cpuefipa <- ggplot(bitfipa %>%
 cpuefipa
   
 ```
-Guardo datos FIPA 96
+Guardo datos de la CPUE nominal del FIPA 96-14
 
 ```{r}
 cpuenomfipa <- bitfipa %>%
@@ -1067,11 +1189,12 @@ cpuenomfipa <- bitfipa %>%
 ```{r}
 write_csv(cpuenomfipa, "CPUE_FIPA.csv")
 ```
+
 ## MAPAS
 
 Lo primero es transformar los datos de `lon_ctgr` y `lat_ctgr` a formarto geom. A su vez, saco las NA de las coord
 
-transformar los datos en un sf object
+transformar los datos en un `sf object`
 ```{r}
 codmap <- st_as_sf(bitb2 %>% 
                     drop_na(lon_ctgr) %>% 
@@ -1129,7 +1252,7 @@ Mapa Esfuerzo
 
 > here we can viz diferent variables  
 
-```{r fig.cap= "Cambios espaciotempiorales del esfuerzo pesquero en bacalao APA. Linea roja representa el 47ºS", fig.width=3, fig.height=4}
+```{r fig.cap= "Cambios espaciotempiorales del esfuerzo pesquero en bacalao APA. Linea roja representa el 47ºS", fig.width=6, fig.height=8}
 ## Plot final
 mas1 <- ggplot() +
   geom_sf(data=joindat %>% 
@@ -1155,7 +1278,7 @@ mas1
 ```
 Mapa CPUE
 
-```{r fig.cap= "Cambios espaciotempiorales del rendimiento pesquero en bacalao APA. Linea roja representa el 47ºS", fig.width=3, fig.height=4}
+```{r fig.cap= "Cambios espaciotempiorales del rendimiento pesquero en bacalao APA. Linea roja representa el 47ºS", fig.width=6, fig.height=8}
 ## Plot final
 mas2 <- ggplot() +
   geom_sf(data=joindat %>% 
@@ -1180,8 +1303,6 @@ mas2 <- ggplot() +
 mas2
 ```
 Falta componer mapas de tallas medias y alguna otra variable de interés.
-
-# CONCLUSION 
 
 En función de los datos analizados, el modelo propuesto es un enfoque de producción global estado espacio descrito por @Pedersen2017 y @ICES2015.
 
