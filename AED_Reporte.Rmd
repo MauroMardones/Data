@@ -6,8 +6,8 @@ date:  "`r format(Sys.time(), '%d %B, %Y')`"
 format:
   pdf:
     theme: cosmo
-    fontsize: 0.9em
-    linestretch: 1.7
+    #fontsize: 0.9em
+    #linestretch: 1.0
     html-math-method: katex
     self-contained: true
     embed-resources: true
@@ -22,7 +22,7 @@ csl: apa.csl
 ---
 
 ```{=tex}
-\fontsize{12}{20}
+\fontsize{10}{16}
 \selectfont
 ```
 
