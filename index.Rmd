@@ -887,7 +887,7 @@ hist(exp(predM06$fit))
 Seleccion del modelo final `M06`
 
 ```{r fig.width=4}
-check_model(M07)
+check_model(M02)
 ```
 
 
