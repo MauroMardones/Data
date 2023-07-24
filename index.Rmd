@@ -277,6 +277,7 @@ Identifico las dimensionesd e la nueva base y la comparo con la anterior
 dim(bitb2)
 dim(bitb)
 table(bitb2$año, bitb2$TIPO_CARNADA)
+table(bitb$embarque, bitb$año)
 ```
 
 Los registros se minimiza en ciertos años lo cual genera problemas en la fiabilidad de la estimación.
@@ -1273,12 +1274,21 @@ Guardo datos de la CPUE nominal del FIPA 96-14
 cpuenomfipa <- bitfipa %>%
   filter(ANO<1997)  %>%
   group_by(ANO) %>% 
-  summarise(CPUEF=mean(CPUE))
+  summarise(CPUEF=mean(CPUE),
+            DFPF=mean(DFP))
 ```
 
 ```{r}
 write_csv(cpuenomfipa, "CPUE_FIPA.csv")
 ```
+
+Cuento los registros
+
+```{r}
+cuenta <- count(bit8696, bit8696$ANO)
+
+```
+
 
 ## MAPAS
 
