@@ -238,7 +238,7 @@ ggarrange(p1, p2, p3, p4,p5, p6,  nrow = 3)
 #### Remuevo outliers
 
 
-Los datos de profundidades andan bien, Filtro los datos de  la variable `dfp` entre 0 y 30 días. y repito la inspección
+Los datos de profundidades andan bien, Filtro los datos de  la variable `dfp` entre 0 y 80 días. y repito la inspección
 ```{r}
 bitb2 <- bitb  %>% 
   filter(dfp>0,
@@ -276,7 +276,7 @@ Identifico las dimensionesd e la nueva base y la comparo con la anterior
 ```{r}
 dim(bitb2)
 dim(bitb)
-table(bitb$año)
+table(bitb2$año, bitb2$TIPO_CARNADA)
 ```
 
 Los registros se minimiza en ciertos años lo cual genera problemas en la fiabilidad de la estimación.
@@ -547,7 +547,7 @@ names(bitb3)
 ```
 
 
-```{r}
+```{r }
 results <- correlation(bitb3)
 
 results %>%
@@ -626,20 +626,7 @@ shapiro.test(bitb3$CPUE)
 
 Departure from normality...but not critical
 
-### Colinealidad entre factores
-```{r eval= FALSE, message=FALSE, warning=FALSE}
-# COLLINEARITY
-Coll <- c("año",  "dfp" ,"lat_ctgr", "zona" ,
-          "N_PANOS" ,    "CPUE", "prof_med_cat")
 
-# Obtain summary using the ggpairs command from the GGally library
-ggpairs(bitb3[,Coll], ggplot2::aes(alpha = 0.9, colour=zona),
-        lower = list(combo = "count"))+
-  scale_fill_manual(values=c("red", "blue", "green",  "black")) +
-   scale_colour_manual(values=c("red", "blue", "green", "black")) +
-  theme_few()
-# Nothing serious
-```
 
 
 ```{r message=FALSE, warning=FALSE}
@@ -762,7 +749,20 @@ bitb3 <- bitb3 %>%
 glimpse(bitb3)
   
 ```
+### Colinealidad entre factores
+```{r eval= FALSE, message=FALSE, warning=FALSE}
+# COLLINEARITY
+Coll <- c("año",  "dfp" ,"lat_ctgr", "zona" ,
+          "N_PANOS" ,    "CPUE", "prof_med_cat")
 
+# Obtain summary using the ggpairs command from the GGally library
+ggpairs(bitb3[,Coll], ggplot2::aes(alpha = 0.9, colour=zona),
+        lower = list(combo = "count"))+
+  scale_fill_manual(values=c("red", "blue", "green",  "black")) +
+   scale_colour_manual(values=c("red", "blue", "green", "black")) +
+  theme_few()
+# Nothing serious
+```
 
  The data exploration showed:
    
@@ -815,31 +815,33 @@ En la transformación de la dsata se comprueba la inconcistencia del uso de dato
 
 
 ```{r}
+bitb4 <- bitb3 %>% 
+  filter(CPUE>1)
 #Predictores (Factores Principales)
 M01 = glm(formula = CPUE ~  año,
-              family = gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              family = Gamma(link = "identity"), 
+              data = bitb4,na.action=na.exclude)
 M02 = glm(formula= CPUE ~  año+trim,
               family = gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 M03 = glm(formula= CPUE ~  año+trim+prof_med_cat,
               family =  gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 M04 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES,
               family = gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 M05 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT,
               family =  gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 M06 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+TIPO_CARNADA,
               family =  gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 M07 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona,
               family =  gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 M08 = glm(formula= CPUE ~ año+trim+prof_med_cat+N_TRIPULANTES+LAT_CAT+zona:prof_med_cat,
               family = gaussian(link = "identity"), 
-              data = bitb3,na.action=na.exclude)
+              data = bitb4,na.action=na.exclude)
 ```
 
 
@@ -872,22 +874,10 @@ kbl(resultados, booktabs = T,format = "html",
 
 ```
 
-```{r eval=FALSE}
-predict.3    <- predict(M07,se.fit=T)
-predict.mean3 <-exp(predict.3$fit)
-predict.var3  <-predict.mean3^2*predict.3$se.fit^2
-predict.sd3   <-sqrt(predict.var3)
-predict.cv3   <-predict.sd3/predict.mean3
-predict.linf3 <-predict.mean3-1.96*predict.sd3
-predict.lsup3 <-predict.mean3+1.96*predict.sd3
-hist(exp(predM06$fit))
-```
-
-
 Seleccion del modelo final `M06`
 
 ```{r fig.width=4}
-check_model(M02)
+check_model(M06)
 ```
 
 
@@ -966,13 +956,63 @@ ggarrange(res_hist,  res_density, res_points,
           labels = c("A", "B", "C"),
           ncol = 3)
 ```
+extraigo los valores del Modelo `M06`
 
 ```{r eval=FALSE}
-output<-M01$fitted.values
+coef <- M06$coefficients[2:10] %>% 
+  data_frame() %>% 
+  mutate(Val=M06$coefficients[1]-coef$.) 
+
+año <- as.data.frame(c("2014", "2015", "2016", "2017", "2018", "2019", "2020", "2021", "2022"))
+                    
+cpueest <- cbind(año, coef)
+colnames(cpueest) <- c("año", "valor", "CPUE")
+cpueest$Fuente <- c(rep("GLM",nrow(cpueest)))
 ```
 
+Ploteo con los datos de nominal histórico.  LLamo a los datos de cpue nominal del FIPAA y del monitoreo (1985-2022). Yordeno data
 
-Regarding this result, we can select **best model** and check some assumtion like:
+```{r eval=FALSE}
+bac1<- read.table("~/IFOP/CBA/BACALAO/SA/data_bacalaAPA2023.txt", sep="", header = T)
+
+bacpue <- as.data.frame(bac1)
+
+bacpue$Fuente <- c(rep("FIPA",length(bacpue[1:12,1])),
+                     rep("NOMINAL", length(bacpue[13:38,1])))
+
+baccpue2 <- bacpue %>% 
+  dplyr::select(3,4,5) %>% 
+  rename("año"=timeI,
+         "CPUE"=obsI)
+cpueest2 <- cpueest %>% 
+  dplyr::select(1,3,4)
+
+cpuetotal <- rbind(cpueest2, baccpue2)
+```
+
+Grafico 
+```{r eval=FALSE, warning=F, message=F}
+baccoue <- ggplot(cpuetotal,aes(año, CPUE, group=Fuente,
+                                colour=Fuente))+ 
+  geom_point(stat="identity",
+             size=2)+
+  geom_smooth(method="loess",
+              se=T,
+              span=3)+
+  scale_colour_few(palette = "Dark")+
+  xlab("") + 
+  ylab("CPUE (Captura/DFP)")+
+  theme_few()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        panel.grid = element_blank(),
+        legend.position = "top")+
+  scale_x_discrete(breaks = seq(from = 1985, 
+                                to = 2022,
+                                by = 2))+
+  ylim(0,600)
+baccoue
+```
+
 
 - Colinealidad
 - Data points influyentes
@@ -1038,7 +1078,57 @@ nbco <- ggplot(long2 %>%
 nbco
 
 ```
+Ahora dispongo de otra forma
 
+```{r}
+long3 <- long2 %>% 
+  mutate(REGIONC=as.character(REGION)) %>% 
+  mutate(REGIONC = case_when(
+    REGIONC == "15" ~ "AyP",
+   REGIONC == "1" ~ "TARAPACA",
+   REGIONC == "3" ~ "ATACAMA",
+   REGIONC == "4" ~ "COQUIMBO",
+   REGIONC == "5" ~ "VALPARAISO",
+   REGIONC == "7" ~ "MAULE",
+   REGIONC == "8" ~ "BIOBIO",
+   REGIONC == "14" ~ "LOS RIOS",
+   REGIONC == "10" ~ "LOSLAGOS",
+    TRUE ~ REGIONC # Mantener los valores no mencionados sin cambios
+  ))
+```
+grafico los nuevos `facet`.
+
+```{r warning=F, message=F}
+long3$REGIONC <- factor(long3$REGIONC, levels = c("TARAPACA",
+                                                "ATACAMA",
+                                                "COQUIMBO",
+                                                "VALPARAISO",
+                                                "MAULE",
+                                                "BIOBIO",
+                                                 "LOS RIOS",
+                                                "LOSLAGOS"))
+nreg <- ggplot(long3 %>% 
+                 filter(REGION!=12), 
+               aes(x=LONGITUD_MUESTRA, 
+                   y = as.factor(año),
+                  fill= as.factor(SEXO)))+
+  geom_density_ridges(stat = "binline", 
+                      bins = 30, 
+                      scale = 2.2,
+                      alpha=0.7)+
+  facet_wrap(.~REGIONC, ncol=4) +
+  geom_vline(xintercept = 110, color = "red")+
+  scale_fill_manual(values = c("#636363", "#2c7fb8", "#de2d26"),
+                       name="SEXO",
+                       labels=legend.labels)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  theme_few()+
+  xlab("Longitud (cm.)")+
+  ylab("")+
+  xlim(30,160)
+#scale_x_discrete((limits = rev(levels(talla2021$ANO_ARR))))+
+nreg
+```
 
 ### Prepara los vectores para sumar a los .dat del modelo si los necesito.
 
