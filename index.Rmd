@@ -1000,9 +1000,12 @@ baccoue <- ggplot(cpuetotal,aes(año, CPUE, group=Fuente,
                                 colour=Fuente))+ 
   geom_point(stat="identity",
              size=2)+
-  geom_smooth(method="loess",
+  geom_smooth(method="lm",
               se=T,
-              span=3)+
+              span=0.5)+
+  geom_smooth(method="loess",
+              se=F,
+              span=0.5)+
   scale_colour_few(palette = "Dark")+
   xlab("") + 
   ylab("CPUE (Captura/DFP)")+
