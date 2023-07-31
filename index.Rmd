@@ -205,7 +205,6 @@ bitb <- bit %>%
          PESO_corr = as.double(PESO_corr),
          prof_med=as.double(prof_med))
 dim(bitb)
-
 ```
 se eliminan 1208-11074 = 3134 registros
 
@@ -232,7 +231,7 @@ p5 <- multi_dotplot(bitb, order, HORAS_REPOSO)
 p6 <- multi_dotplot(bitb, order, NUMERO_DE_ANZUELOS)
 
 #Plot as a grid
-ggarrange(p1, p2, p3, p4,p5, p6,  nrow = 3)
+ggarrange(p1, p2, p3, p4, p5, p6)
 ```
 
 #### Remuevo outliers
@@ -288,7 +287,37 @@ ahora calculamos el rendimiento nominal
 
 ### CPUE Nominal
 
-Ahora estimo la CPUE, la cual es el rendimoento entre el esfuerzo y la captura. La medida de esfuerzo será `dfp`. También calculo un rendimiento con la variable de esfuerzo `HORAS_REPOSO` pero solo como antecedente dado que no tengo muchos datos.
+proimero calculo la CPUE con la base original
+
+```{r}
+bitacora <- bitb %>% 
+  drop_na(PESO_corr,
+          dfp) %>% 
+  filter(dfp>0,
+         zona!=4) %>% 
+  mutate(CPUE = PESO_corr/dfp) 
+
+cpuemonito <- bitacora %>% 
+  group_by(año) %>% 
+  summarise(CPUETOT =mean(CPUE))
+
+summary(cpuemonito)
+ggplot(cpuemonito %>% 
+         filter(CPUETOT<600), aes(año,CPUETOT))+
+  geom_point()+
+  geom_smooth(method = "lm")+
+  ylim(0,600)
+```
+
+guardo los datos  bitacora CPUE nominal 1996-2022 del objeto `cpuenom`
+
+
+```{r eval=FALSE}
+write_csv(cpuemonito, "CPUE_MON.csv")
+```
+
+
+Ahora estimo la CPUE con la base de los filtros, la cual es el rendimoento entre el esfuerzo y la captura. La medida de esfuerzo será `dfp`. También calculo un rendimiento con la variable de esfuerzo `HORAS_REPOSO` pero solo como antecedente dado que no tengo muchos datos.
 
 
 
@@ -497,31 +526,7 @@ ggplot(bitb2 %>%
 ploteo los datos de CPUE totales.
 
 
-```{r}
-cpuenom <- ggplot(bitb2 %>% 
-  group_by(zona, año) %>%
-  summarise(CPUEM=mean(CPUE)) %>% 
-  filter(CPUEM<600,
-         año>1996,
-         zona!=4),
-  aes(año, CPUEM, color=zona, group=zona))+
-    geom_point()+
-  geom_smooth()+
-  scale_color_viridis_b(option="B")+
-  scale_x_continuous(breaks = seq(from = 2010, to = 2022, by = 1))+
-  theme_few()+
-  labs(x="",
-       y="CPUE")
-cpuenom
-```
 
-
-guardo los datos  bitacora CPUE nominal 1996-2022 del objeto `cpuenom`
-
-
-```{r eval=FALSE}
-write_csv(cpuenom, "CPUE_MON.csv")
-```
 
 ### CPUE Estandarizada
 
@@ -546,7 +551,7 @@ Primero identifico las variables a correlacionar
 ```{r}
 names(bitb2)
 bitb3 <- bitb2 %>%
-  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 78, 79, 80, 81)
+  dplyr::select(8, 18, 23,24, 25, 26, 32, 33, 34, 39, 69, 73, 75, 79, 80, 81)
 names(bitb3)
 ```
 
@@ -751,7 +756,9 @@ bitb3 <- bitb3 %>%
   mutate(logCPUE=log(CPUE))
 
 glimpse(bitb3)
-  
+
+
+
 ```
 ### Colinealidad entre factores
 ```{r eval= FALSE, message=FALSE, warning=FALSE}
@@ -781,14 +788,16 @@ ggpairs(bitb3[,Coll], ggplot2::aes(alpha = 0.9, colour=zona),
 ### Chequeo distribuciones
 
 ```{r}
-bcpue <- ggplot(bitb3,
+bcpue <- ggplot(bitb3%>% 
+                  filter(CPUE>10),
                 aes(CPUE, group=año))+
   coord_flip()+
   geom_boxplot()+
   theme_few()
 
 
-hcpue <- ggplot(bitb3 ,
+hcpue <- ggplot(bitb3 %>% 
+                  filter(CPUE>10),
                 aes(CPUE))+
   geom_histogram(bins=15, fill=2)+
   theme_few()
@@ -823,7 +832,7 @@ bitb4 <- bitb3 %>%
   filter(CPUE>1)
 #Predictores (Factores Principales)
 M01 = glm(formula = CPUE ~  año,
-              family = Gamma(link = "identity"), 
+              family = gaussian(link = "identity"), 
               data = bitb4,na.action=na.exclude)
 M02 = glm(formula= CPUE ~  año+trim,
               family = gaussian(link = "identity"), 
@@ -922,8 +931,7 @@ plot(compare_performance(M01,
           M05,
           M06,
           M07,
-          M08,
-          rank = TRUE, 
+          M08, 
           verbose = FALSE))
 ```
 
@@ -977,7 +985,7 @@ cpueest$Fuente <- c(rep("GLM",nrow(cpueest)))
 Ploteo con los datos de nominal histórico.  LLamo a los datos de cpue nominal del FIPAA y del monitoreo (1985-2022). Yordeno data
 
 ```{r eval=FALSE}
-bac1<- read.table("~/IFOP/CBA/BACALAO/SA/data_bacalaAPA2023.txt", sep="", header = T)
+bac1<- read.table("~/IFOP/CBA/BACALAO/SA/data_bacalaAPA2023b.txt", sep="", header = T)
 
 bacpue <- as.data.frame(bac1)
 
@@ -996,17 +1004,45 @@ cpuetotal <- rbind(cpueest2, baccpue2)
 
 Grafico 
 ```{r eval=FALSE, warning=F, message=F}
-baccoue <- ggplot(cpuetotal,aes(año, CPUE, group=Fuente,
+colors <- c("#2c7fb8", "#de2d26" ,"#31a354")
+#baccoue <- ggplot(cpuetotal %>% 
+#                    filter(Fuente!="GLM"), Sacar una serie
+baccoue <- ggplot(cpuetotal,
+                  aes(año, CPUE, group=Fuente,
                                 colour=Fuente))+ 
   geom_point(stat="identity",
              size=2)+
   geom_smooth(method="lm",
               se=T,
               span=0.5)+
-  geom_smooth(method="loess",
-              se=F,
+  scale_colour_manual(values= colors)+
+  xlab("") + 
+  ylab("CPUE (Captura/DFP)")+
+  theme_few()+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        panel.grid = element_blank(),
+        legend.position = "top")+
+  scale_x_discrete(breaks = seq(from = 1985, 
+                                to = 2022,
+                                by = 2))+
+  ylim(0,600)
+baccoue
+```
+solo nominal
+
+```{r eval=FALSE, warning=F, message=F}
+colors <- c( "#31a354")
+baccoue <- ggplot(cpuetotal %>% 
+                    filter(Fuente!="GLM",
+                           Fuente!="FIPA"),
+                  aes(año, CPUE, group=Fuente,
+                                colour=Fuente))+ 
+  geom_point(stat="identity",
+             size=2)+
+  geom_smooth(method="lm",
+              se=T,
               span=0.5)+
-  scale_colour_few(palette = "Dark")+
+  scale_colour_manual(values= colors)+
   xlab("") + 
   ylab("CPUE (Captura/DFP)")+
   theme_few()+
