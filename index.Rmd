@@ -889,7 +889,7 @@ kbl(resultados, booktabs = T,format = "html",
 
 Seleccion del modelo final `M06`
 
-```{r fig.width=4}
+```{r fig.width=6}
 check_model(M06)
 ```
 
@@ -970,7 +970,7 @@ ggarrange(res_hist,  res_density, res_points,
 ```
 extraigo los valores del Modelo `M06`
 
-```{r eval=FALSE}
+```{r }
 coef <- M06$coefficients[2:10] %>% 
   data_frame() %>% 
   mutate(Val=M06$coefficients[1]-coef$.) 
@@ -984,7 +984,7 @@ cpueest$Fuente <- c(rep("GLM",nrow(cpueest)))
 
 Ploteo con los datos de nominal histórico.  LLamo a los datos de cpue nominal del FIPAA y del monitoreo (1985-2022). Yordeno data
 
-```{r eval=FALSE}
+```{r}
 bac1<- read.table("~/IFOP/CBA/BACALAO/SA/data_bacalaAPA2023b.txt", sep="", header = T)
 
 bacpue <- as.data.frame(bac1)
@@ -1003,7 +1003,7 @@ cpuetotal <- rbind(cpueest2, baccpue2)
 ```
 
 Grafico 
-```{r eval=FALSE, warning=F, message=F}
+```{r  warning=F, message=F}
 colors <- c("#2c7fb8", "#de2d26" ,"#31a354")
 #baccoue <- ggplot(cpuetotal %>% 
 #                    filter(Fuente!="GLM"), Sacar una serie
@@ -1024,8 +1024,7 @@ baccoue <- ggplot(cpuetotal,
         legend.position = "top")+
   scale_x_discrete(breaks = seq(from = 1985, 
                                 to = 2022,
-                                by = 2))+
-  ylim(0,600)
+                                by = 2))
 baccoue
 ```
 solo nominal
