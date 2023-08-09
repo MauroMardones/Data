@@ -274,6 +274,7 @@ Identifico las dimensionesd e la nueva base y la comparo con la anterior
 
 
 
+
 ```{r}
 dim(bitb2)
 dim(bitb)
