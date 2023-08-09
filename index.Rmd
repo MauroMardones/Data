@@ -283,6 +283,7 @@ table(bitb$embarque, bitb$año)
 
 Los registros se minimiza en ciertos años lo cual genera problemas en la fiabilidad de la estimación.
 
+
 ahora calculamos el rendimiento nominal
 
 ### CPUE Nominal
