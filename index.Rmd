@@ -306,7 +306,7 @@ ggplot(cpuemonito %>%
          filter(CPUETOT<600), aes(año,CPUETOT))+
   geom_point()+
   geom_smooth(method = "lm")+
-  ylim(0,600)
+  theme_few()
 ```
 
 guardo los datos  bitacora CPUE nominal 1996-2022 del objeto `cpuenom`
