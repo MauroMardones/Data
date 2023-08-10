@@ -30,7 +30,6 @@ options(bitmapType = "cairo")
 ```
 
 
-
 ```{r setup2, include=FALSE, message=F}
 knitr::opts_chunk$set(collapse = TRUE, 
                       comment = "  ", 
